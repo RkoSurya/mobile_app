@@ -1,0 +1,16 @@
+gradlew clean - cd android
+cd..
+npx react-native start --reset-cache ---> run in first terminal metor bundle 
+npx react-native run-android ---> run in second terminal
+
+
+if we wants to connect created app computer into real phone:-
+
+initial in ur mobile need to set up "usb debugging on" before "build" in about phone to tab "seven time"
+command: "adb device"  to get list of all devices
+command to build: "npx react-native start --reset-cache  device id" 
+
+if we wants to created app into apk file:-
+
+command: "gradlew assembleDebug" for release version
+command: "gradlew assembleRelease" for debug version

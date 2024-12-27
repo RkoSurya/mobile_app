@@ -1,0 +1,99 @@
+<svg viewBox="0 0 800 400" style="background: #1a1a1a">
+    <!-- Users Table -->
+    <rect x="50" y="50" width="200" height="160" fill="#1a1a1a" stroke="#4a9eff" stroke-width="2"/>
+    <text x="125" y="75" fill="#4a9eff" text-anchor="middle" font-family="monospace" font-size="14">USERS</text>
+    <text x="60" y="95" fill="white" font-family="monospace" font-size="12">string user_id</text>
+    <line x1="50" y1="105" x2="250" y2="105" stroke="#4a9eff" stroke-width="1"/>
+    <text x="60" y="125" fill="white" font-family="monospace" font-size="12">string name</text>
+    <line x1="50" y1="135" x2="250" y2="135" stroke="#4a9eff" stroke-width="1"/>
+    <text x="60" y="155" fill="white" font-family="monospace" font-size="12">string email</text>
+    <line x1="50" y1="165" x2="250" y2="165" stroke="#4a9eff" stroke-width="1"/>
+    <text x="60" y="185" fill="white" font-family="monospace" font-size="12">string role</text>
+    <line x1="50" y1="195" x2="250" y2="195" stroke="#4a9eff" stroke-width="1"/>
+
+    <!-- Locations Table -->
+    <rect x="50" y="250" width="200" height="200" fill="#1a1a1a" stroke="#4dff4d" stroke-width="2"/>
+    <text x="125" y="275" fill="#4dff4d" text-anchor="middle" font-family="monospace" font-size="14">LOCATIONS</text>
+    <text x="60" y="295" fill="white" font-family="monospace" font-size="12">string location_id</text>
+    <line x1="50" y1="305" x2="250" y2="305" stroke="#4dff4d" stroke-width="1"/>
+    <text x="60" y="325" fill="white" font-family="monospace" font-size="12">string user_id</text>
+    <line x1="50" y1="335" x2="250" y2="335" stroke="#4dff4d" stroke-width="1"/>
+    <text x="60" y="355" fill="white" font-family="monospace" font-size="12">timestamp time</text>
+    <line x1="50" y1="365" x2="250" y2="365" stroke="#4dff4d" stroke-width="1"/>
+    <text x="60" y="385" fill="white" font-family="monospace" font-size="12">float latitude</text>
+    <line x1="50" y1="395" x2="250" y2="395" stroke="#4dff4d" stroke-width="1"/>
+    <text x="60" y="415" fill="white" font-family="monospace" font-size="12">float longitude</text>
+    <line x1="50" y1="425" x2="250" y2="425" stroke="#4dff4d" stroke-width="1"/>
+
+    <!-- Shops Table -->
+    <rect x="600" y="50" width="200" height="200" fill="#1a1a1a" stroke="#ff80ff" stroke-width="2"/>
+    <text x="675" y="75" fill="#ff80ff" text-anchor="middle" font-family="monospace" font-size="14">SHOPS</text>
+    <text x="610" y="95" fill="white" font-family="monospace" font-size="12">string shop_id</text>
+    <line x1="600" y1="105" x2="800" y2="105" stroke="#ff80ff" stroke-width="1"/>
+    <text x="610" y="125" fill="white" font-family="monospace" font-size="12">string name</text>
+    <line x1="600" y1="135" x2="800" y2="135" stroke="#ff80ff" stroke-width="1"/>
+    <text x="610" y="155" fill="white" font-family="monospace" font-size="12">string area</text>
+    <line x1="600" y1="165" x2="800" y2="165" stroke="#ff80ff" stroke-width="1"/>
+    <text x="610" y="185" fill="white" font-family="monospace" font-size="12">string address</text>
+    <line x1="600" y1="195" x2="800" y2="195" stroke="#ff80ff" stroke-width="1"/>
+    <text x="610" y="215" fill="white" font-family="monospace" font-size="12">float latitude</text>
+    <line x1="600" y1="225" x2="800" y2="225" stroke="#ff80ff" stroke-width="1"/>
+    <text x="610" y="245" fill="white" font-family="monospace" font-size="12">float longitude</text>
+    <line x1="600" y1="255" x2="800" y2="255" stroke="#ff80ff" stroke-width="1"/>
+
+    <!-- Shop Visits Table -->
+    <rect x="325" y="250" width="200" height="200" fill="#1a1a1a" stroke="#ffa500" stroke-width="2"/>
+    <text x="400" y="275" fill="#ffa500" text-anchor="middle" font-family="monospace" font-size="14">SHOP_VISITS</text>
+    <text x="335" y="295" fill="white" font-family="monospace" font-size="12">string visit_id</text>
+    <line x1="325" y1="305" x2="525" y2="305" stroke="#ffa500" stroke-width="1"/>
+    <text x="335" y="325" fill="white" font-family="monospace" font-size="12">string shop_id</text>
+    <line x1="325" y1="335" x2="525" y2="335" stroke="#ffa500" stroke-width="1"/>
+    <text x="335" y="355" fill="white" font-family="monospace" font-size="12">string user_id</text>
+    <line x1="325" y1="365" x2="525" y2="365" stroke="#ffa500" stroke-width="1"/>
+    <text x="335" y="385" fill="white" font-family="monospace" font-size="12">string location_id</text>
+    <line x1="325" y1="395" x2="525" y2="395" stroke="#ffa500" stroke-width="1"/>
+    <text x="335" y="415" fill="white" font-family="monospace" font-size="12">timestamp visit_time</text>
+    <line x1="325" y1="425" x2="525" y2="425" stroke="#ffa500" stroke-width="1"/>
+
+    <!-- Orders Table -->
+    <rect x="600" y="250" width="200" height="200" fill="#1a1a1a" stroke="#ff4d4d" stroke-width="2"/>
+    <text x="675" y="275" fill="#ff4d4d" text-anchor="middle" font-family="monospace" font-size="14">ORDERS</text>
+    <text x="610" y="295" fill="white" font-family="monospace" font-size="12">string order_id</text>
+    <line x1="600" y1="305" x2="800" y2="305" stroke="#ff4d4d" stroke-width="1"/>
+    <text x="610" y="325" fill="white" font-family="monospace" font-size="12">string visit_id</text>
+    <line x1="600" y1="335" x2="800" y2="335" stroke="#ff4d4d" stroke-width="1"/>
+    <text x="610" y="355" fill="white" font-family="monospace" font-size="12">string shop_id</text>
+    <line x1="600" y1="365" x2="800" y2="365" stroke="#ff4d4d" stroke-width="1"/>
+    <text x="610" y="385" fill="white" font-family="monospace" font-size="12">string user_id</text>
+    <line x1="600" y1="395" x2="800" y2="395" stroke="#ff4d4d" stroke-width="1"/>
+    <text x="610" y="415" fill="white" font-family="monospace" font-size="12">float total_amount</text>
+    <line x1="600" y1="425" x2="800" y2="425" stroke="#ff4d4d" stroke-width="1"/>
+
+    <!-- Relationships -->
+    <!-- Users to Shops -->
+    <path d="M 200 75 H 600" stroke="#4a9eff" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+    <text x="400" y="60" fill="#4a9eff" text-anchor="middle" font-family="monospace" font-size="12">creates</text>
+
+    <!-- Users to Shop_Visits -->
+    <path d="M 200 100 Q 300 200 325 300" stroke="#4a9eff" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+    <text x="250" y="200" fill="#4a9eff" text-anchor="middle" font-family="monospace" font-size="12">makes</text>
+
+    <!-- Locations to Shop_Visits -->
+    <path d="M 200 300 H 325" stroke="#4dff4d" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+    <text x="262" y="280" fill="#4dff4d" text-anchor="middle" font-family="monospace" font-size="12">records_at</text>
+
+    <!-- Shops to Shop_Visits -->
+    <path d="M 600 100 Q 500 200 475 300" stroke="#ff80ff" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+    <text x="550" y="200" fill="#ff80ff" text-anchor="middle" font-family="monospace" font-size="12">receives</text>
+
+    <!-- Shop_Visits to Orders -->
+    <path d="M 475 300 H 600" stroke="#ffa500" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+    <text x="537" y="280" fill="#ffa500" text-anchor="middle" font-family="monospace" font-size="12">generates</text>
+
+    <!-- Arrow definitions -->
+    <defs>
+        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#ffffff"/>
+        </marker>
+    </defs>
+</svg>
