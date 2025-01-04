@@ -18,7 +18,7 @@ import { check, request, PERMISSIONS, RESULTS, openSettings } from 'react-native
 import { addLocationData } from '../services/firestoreService';
 import DeviceInfo from 'react-native-device-info';
 import BackgroundTimer from 'react-native-background-timer';
-
+import auth from '@react-native-firebase/auth';
 
 // Configure geolocation with better settings
 Geolocation.setRNConfiguration({
@@ -182,42 +182,63 @@ const TrackingScreen = () => {
     });
   };
 
-  const handleEndDayOnTracking = () => {
-    console.log('Ending day on Tracking page');
-    
-    // Update tracking ref first to prevent new updates
-    isTrackingRef.current = false;
-    
-    // Stop Firestore updates immediately
-    stopFirestoreUpdates();
-    
-    // Stop location tracking
-    if (watchId) {
+  const stopLocationTracking = () => {
+    // Clear watch
+    if (watchId !== null) {
       Geolocation.clearWatch(watchId);
       setWatchId(null);
     }
+    // Stop all observers
+    Geolocation.stopObserving();
+  };
+
+  const handleEndDayOnTracking = async () => {
+    console.log('Ending day on Tracking page - Starting cleanup');
     
-    // Stop timer
-    if (timerInterval) {
-      BackgroundTimer.clearInterval(timerInterval);
-      setTimerInterval(null);
-    }
-    
-    // Update state
+    // Immediately prevent new updates
+    isTrackingRef.current = false;
     setIsTracking(false);
-    setIsPaused(false);
-    setCurrentLocation(null);
-    setLocationHistory([]);
-    setDistance(0);
-    setTime(0);
     
-    // Force clear all background timers as final safety measure
-    BackgroundTimer.stopBackgroundTimer();
-    
-    // Navigate after cleanup
-    setTimeout(() => {
+    try {
+      // 1. Stop location tracking first to prevent any new updates
+      stopLocationTracking();
+      
+      // 2. Stop Firestore updates
+      stopFirestoreUpdates();
+      
+      // 3. Stop timer
+      if (timerInterval) {
+        BackgroundTimer.clearInterval(timerInterval);
+        setTimerInterval(null);
+      }
+      
+      // 4. Reset all states
+      setIsPaused(false);
+      setCurrentLocation(null);
+      setLocationHistory([]);
+      setDistance(0);
+      setTime(0);
+      
+      // 5. Final cleanup
+      BackgroundTimer.stopBackgroundTimer();
+      
+      // 6. Double check location tracking is stopped
+      stopLocationTracking();
+      
+      // Wait for cleanup to complete
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      console.log('All tracking processes stopped successfully');
+      
+      // Final check before navigation
+      stopLocationTracking();
       navigation.navigate('Home');
-    }, 100);
+    } catch (error) {
+      console.error('Error during cleanup:', error);
+      // Ensure location is stopped even on error
+      stopLocationTracking();
+      navigation.navigate('Home');
+    }
   };
 
   const requestLocationPermission = async () => {
@@ -360,11 +381,17 @@ const TrackingScreen = () => {
         }
 
         console.log("Updating Firestore - 1 minute interval");
-        await addLocationData('your_journey_id', {
+        const currentUser = auth().currentUser;
+        if (!currentUser?.uid) {
+          console.log('No user ID found, skipping Firestore update');
+          return;
+        }
+        await addLocationData(currentUser.uid, 'your_journey_id', {
           latitude,
           longitude,
           accuracy,
           batteryLevel,
+          eventType: 'day_tracking',
           timestamp: new Date().toISOString()
         });
         console.log("Firestore update successful");
@@ -485,13 +512,13 @@ const TrackingScreen = () => {
 
   useEffect(() => {
     return () => {
-      if (watchId !== null) {
-        Geolocation.clearWatch(watchId);
-      }
+      // Cleanup when component unmounts
+      stopLocationTracking();
       if (timerInterval) {
         BackgroundTimer.clearInterval(timerInterval);
       }
       stopFirestoreUpdates();
+      BackgroundTimer.stopBackgroundTimer();
     };
   }, [watchId, timerInterval]);
 
@@ -505,7 +532,7 @@ const TrackingScreen = () => {
         <View style={styles.dummyMap}>
           <Text style={styles.locationText}>
             {currentLocation 
-              ? `${currentLocation.latitude.toFixed(6)}, ${currentLocation.longitude.toFixed(6)}`
+              ? `${currentLocation.latitude.toFixed(6)}, ${currentLocation.longitude.toFixed(6)}` 
               : 'No location data'}
           </Text>
         </View>
@@ -526,7 +553,7 @@ const TrackingScreen = () => {
         <Text style={styles.locationLabel}>Current Location:</Text>
         <Text style={styles.locationValue}>
           {currentLocation 
-            ? `${currentLocation.latitude.toFixed(6)}, ${currentLocation.longitude.toFixed(6)}`
+            ? `${currentLocation.latitude.toFixed(6)}, ${currentLocation.longitude.toFixed(6)}` 
             : 'No location data'}
         </Text>
       </View>

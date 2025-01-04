@@ -1,8 +1,8 @@
 {
   "project_info": {
-    "project_number": "504118241613",
-    "project_id": "test-auth-6df86",
-    "storage_bucket": "test-auth-6df86.firebasestorage.app"
+    "project_number": "508203327199",
+    "project_id": "mobile-app-ab40a",
+    "storage_bucket": "mobile-app-ab40a.firebasestorage.app"
   },
   "client": [
     {
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyB3E8ySHBe68tKQItnqXyrLGyok5UgAhy8"
+          "current_key": "AIzaSyAxe36Uqfjbd2Z5gWC-RnFcjGKuYvkyg20"
         }
       ],
       "services": {

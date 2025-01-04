@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,31 +11,79 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import type { NavigationProp } from '../types/navigation';
+import { addShopToFirestore, getUserNameByEmail } from '../services/firestoreService';
+import auth from '@react-native-firebase/auth';
+import Geolocation from '@react-native-community/geolocation';
 
 const AddShopScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const [shopName, setShopName] = useState('');
+  const [area, setArea] = useState('');
   const [address, setAddress] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [notes, setNotes] = useState('');
+  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
-  const handleSubmit = () => {
-    if (!shopName.trim() || !address.trim()) {
-      Alert.alert('Error', 'Shop name and address are required!');
+  useEffect(() => {
+    // Get current location when component mounts
+    Geolocation.getCurrentPosition(
+      position => {
+        setLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+      },
+      error => {
+        console.error(error);
+        Alert.alert('Error', 'Failed to get location. Please try again.');
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+    );
+  }, []);
+
+  const handleSubmit = async () => {
+    if (!shopName.trim() || !address.trim() || !area.trim() || !phoneNumber.trim()) {
+      Alert.alert('Error', 'All fields are required!');
       return;
     }
 
-    // TODO: Add API call to save shop details
-    Alert.alert(
-      'Success',
-      'Shop added successfully!',
-      [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ],
-    );
+    if (!location) {
+      Alert.alert('Error', 'Location data is not available. Please try again.');
+      return;
+    }
+
+    try {
+      const currentUser = auth().currentUser;
+      if (!currentUser?.email) {
+        Alert.alert('Error', 'User not authenticated');
+        return;
+      }
+
+      const userName = await getUserNameByEmail(currentUser.email);
+      
+      await addShopToFirestore({
+        name: shopName.trim(),
+        area: area.trim(),
+        address: address.trim(),
+        phoneNumber: phoneNumber.trim(),
+        latitude: location.latitude,
+        longitude: location.longitude,
+        created_by: userName || currentUser.email,
+      });
+
+      Alert.alert(
+        'Success',
+        'Shop added successfully!',
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack(),
+          },
+        ],
+      );
+    } catch (error) {
+      console.error('Error adding shop:', error);
+      Alert.alert('Error', 'Failed to add shop. Please try again.');
+    }
   };
 
   return (
@@ -53,48 +101,45 @@ const AddShopScreen = () => {
             <Text style={styles.label}>Shop Name *</Text>
             <TextInput
               style={styles.input}
+              placeholder="Shop Name"
+              placeholderTextColor="#666"
               value={shopName}
               onChangeText={setShopName}
-              placeholder="Enter shop name"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Area *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Area"
               placeholderTextColor="#666"
+              value={area}
+              onChangeText={setArea}
             />
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Address *</Text>
             <TextInput
-              style={[styles.input, styles.textArea]}
+              style={styles.input}
+              placeholder="Address"
+              placeholderTextColor="#666"
               value={address}
               onChangeText={setAddress}
-              placeholder="Enter shop address"
-              placeholderTextColor="#666"
               multiline
-              numberOfLines={3}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Phone Number</Text>
+            <Text style={styles.label}>Phone Number *</Text>
             <TextInput
               style={styles.input}
+              placeholder="Phone Number"
+              placeholderTextColor="#666"
               value={phoneNumber}
               onChangeText={setPhoneNumber}
-              placeholder="Enter phone number"
-              placeholderTextColor="#666"
               keyboardType="phone-pad"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Notes</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Add any additional notes"
-              placeholderTextColor="#666"
-              multiline
-              numberOfLines={4}
             />
           </View>
 
@@ -160,10 +205,6 @@ const styles = StyleSheet.create({
     color: '#333',
     borderWidth: 1,
     borderColor: '#dee2e6',
-  },
-  textArea: {
-    height: 100,
-    textAlignVertical: 'top',
   },
   submitButton: {
     backgroundColor: '#28a745',

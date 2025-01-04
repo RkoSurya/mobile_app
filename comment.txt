@@ -13,4 +13,4 @@ command to build: "npx react-native start --reset-cache  device id"
 if we wants to created app into apk file:-
 
 command: "gradlew assembleDebug" for release version
-command: "gradlew assembleRelease" for debug version
+command: "gradlew assembleRelease" for debug version finding the apk file: C:\Users\surya\Project\android\app\build\outputs\apk\release

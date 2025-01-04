@@ -1,4 +1,4 @@
-import firestore from '@react-native-firebase/firestore';
+import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 
 // Function to add user data to Firestore
 export const addUserToFirestore = async (userData: { name: string; email: string; phoneNumber: string }) => {
@@ -10,56 +10,110 @@ export const addUserToFirestore = async (userData: { name: string; email: string
   }
 };
 
-export const addLocationData = async (journeyId: string, locationData: { 
-  latitude: number; 
-  longitude: number; 
-  accuracy: number; 
-  batteryLevel: number;
-  timestamp: string;
-}) => {
+export const addLocationData = async (
+  userId: string,
+  journeyId: string, 
+  locationData: { 
+    latitude: number; 
+    longitude: number; 
+    accuracy: number; 
+    batteryLevel: number;
+    eventType: 'day_tracking' | 'shop_in';
+    timestamp: string;
+  }
+) => {
   try {
-    const locationRef = firestore().collection('daily_journeys').doc(`daily_journey_id_${journeyId}`).collection('tracking_locations');
+    const journeyRef = firestore().collection('daily_journeys').doc(`daily_journey_id_${journeyId}`);
+    
+    // Get the journey document
+    const journeyDoc = await journeyRef.get();
+    
+    // If this is the first location entry for this journey, initialize the journey document
+    if (!journeyDoc.exists) {
+      const now = firestore.Timestamp.now();
+      await journeyRef.set({
+        user_id: userId,
+        date: now,
+        start_time: now,
+        end_time: now,
+        total_distance: 0,
+        tracking_locations: {}
+      });
+    }
 
-    // Round the current coordinates to 3 decimal places
-    const roundedLatitude = Number(locationData.latitude.toFixed(3));
-    const roundedLongitude = Number(locationData.longitude.toFixed(3));
-
-    // Get current date in local timezone (without time)
-    const currentDate = new Date();
-    const dateString = currentDate.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    }); // Format: "December 26, 2024"
-
-    // Get current time in HH:mm format
-    const timeString = currentDate.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-
-    // Add new location data with date and time
+    // Create a new location entry
     const timestamp = firestore.Timestamp.now();
-    await locationRef.add({
-      latitude: roundedLatitude,
-      longitude: roundedLongitude,
-      accuracy: locationData.accuracy,
-      batteryLevel: locationData.batteryLevel,
-      dateString,
-      timeString,
-      timestamp,
-      createdAt: timestamp
+    const locationId = `timestamp_${Date.now()}`;
+
+    // Update the journey document with the new location
+    await journeyRef.update({
+      end_time: timestamp,
+      [`tracking_locations.${locationId}`]: {
+        latitude: Number(locationData.latitude.toFixed(6)),
+        longitude: Number(locationData.longitude.toFixed(6)),
+        timestamp: timestamp,
+        accuracy: Number(locationData.accuracy.toFixed(2)),
+        battery_level: locationData.batteryLevel,
+        event_type: locationData.eventType
+      }
     });
 
     console.log('Location data added successfully:', {
-      dateString,
-      timeString,
-      latitude: roundedLatitude,
-      longitude: roundedLongitude
+      journeyId,
+      locationId,
+      eventType: locationData.eventType
     });
   } catch (error) {
     console.error('Error adding location data:', error);
     throw error;
+  }
+};
+
+// Shop type definition
+export interface Shop {
+  name: string;
+  area: string;
+  address: string;
+  phoneNumber: string;
+  latitude: number;
+  longitude: number;
+  created_by: string;
+  created_at: FirebaseFirestoreTypes.Timestamp;
+}
+
+// Function to add a shop to Firestore
+export const addShopToFirestore = async (shopData: Omit<Shop, 'created_at'>) => {
+  try {
+    const shopRef = firestore().collection('shops');
+    const timestamp = firestore.Timestamp.now();
+    
+    await shopRef.add({
+      ...shopData,
+      created_at: timestamp
+    });
+    
+    console.log('Shop added to Firestore successfully!');
+  } catch (error) {
+    console.error('Error adding shop to Firestore: ', error);
+    throw error;
+  }
+};
+
+// Function to get user's name by email
+export const getUserNameByEmail = async (email: string): Promise<string | null> => {
+  try {
+    const usersSnapshot = await firestore()
+      .collection('users')
+      .where('email', '==', email)
+      .limit(1)
+      .get();
+
+    if (!usersSnapshot.empty) {
+      return usersSnapshot.docs[0].data().name;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting user name: ', error);
+    return null;
   }
 };
