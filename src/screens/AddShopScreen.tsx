@@ -7,38 +7,43 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  PermissionsAndroid,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import type { NavigationProp } from '../types/navigation';
+import type { Location } from '../types/location';
 import { addShopToFirestore, getUserNameByEmail } from '../services/firestoreService';
 import auth from '@react-native-firebase/auth';
 import Geolocation from '@react-native-community/geolocation';
 
+type AddShopScreenParams = {
+  currentLocation?: Location;
+};
+
 const AddShopScreen = () => {
   const navigation = useNavigation<NavigationProp>();
+  const route = useRoute<RouteProp<{ params: AddShopScreenParams }, 'params'>>();
+  const { currentLocation } = route.params || {};
   const [shopName, setShopName] = useState('');
   const [area, setArea] = useState('');
   const [address, setAddress] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(
+    currentLocation ? {
+      latitude: currentLocation.coords.latitude,
+      longitude: currentLocation.coords.longitude,
+    } : null
+  );
 
   useEffect(() => {
-    // Get current location when component mounts
-    Geolocation.getCurrentPosition(
-      position => {
-        setLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
-      },
-      error => {
-        console.error(error);
-        Alert.alert('Error', 'Failed to get location. Please try again.');
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-    );
-  }, []);
+    if (currentLocation) {
+      setLocation({
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+      });
+    }
+  }, [currentLocation]);
 
   const handleSubmit = async () => {
     if (!shopName.trim() || !address.trim() || !area.trim() || !phoneNumber.trim()) {
@@ -47,7 +52,7 @@ const AddShopScreen = () => {
     }
 
     if (!location) {
-      Alert.alert('Error', 'Location data is not available. Please try again.');
+      Alert.alert('Error', 'Location not available. Please try again.');
       return;
     }
 

@@ -1,21 +1,80 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  ScrollView,
-  TouchableOpacity,
-} from 'react-native';
-import { useOrders } from '../context/OrderContext';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
+import auth from '@react-native-firebase/auth';
+import { getTodaySummary } from '../services/firestoreService';
 import { useNavigation } from '@react-navigation/native';
 
+interface ShopSummary {
+  shopName: string;
+  area: string;
+  orderCount: number;
+  totalAmount: number;
+  products: Record<string, {
+    quantity: number;
+    uom: string;
+    amount: number;
+  }>;
+}
+
+interface Summary {
+  totalOrders: number;
+  totalAmount: number;
+  totalDistance: number;
+  shopSummaries: Record<string, ShopSummary>;
+}
+
 const DaySummaryScreen = () => {
-  const { dailySummary } = useOrders();
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [loading, setLoading] = useState(true);
   const navigation = useNavigation();
 
+  useEffect(() => {
+    loadSummary();
+  }, []);
+
+  const loadSummary = async () => {
+    try {
+      const currentUser = auth().currentUser;
+      if (!currentUser) {
+        console.error('No user logged in');
+        return;
+      }
+
+      const data = await getTodaySummary(currentUser.uid);
+      setSummary(data);
+    } catch (error) {
+      console.error('Error loading summary:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleShopPress = (shopName: string, area: string, products: Record<string, { quantity: number; uom: string; amount: number }>) => {
+    const ordersList = Object.entries(products).map(([product_name, details]) => ({
+      product_name,
+      ...details
+    }));
+
+    navigation.navigate('ShopOrderDetails', {
+      shopName,
+      area,
+      orders: ordersList,
+      totalAmount: summary?.shopSummaries[Object.keys(summary.shopSummaries).find(key => 
+        summary.shopSummaries[key].shopName === shopName
+      ) || '']?.totalAmount || 0
+    });
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#34C759" />
+      </View>
+    );
+  }
+
   return (
-    <SafeAreaView style={styles.container}>
+    <ScrollView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.checkmarkContainer}>
           <Text style={styles.checkmark}>✓</Text>
@@ -25,149 +84,147 @@ const DaySummaryScreen = () => {
       </View>
 
       <View style={styles.statsContainer}>
-        <View style={styles.statBox}>
+        <View style={[styles.statBox, styles.distanceBox]}>
           <Text style={styles.statLabel}>Distance</Text>
-          <Text style={styles.statValue}>{dailySummary.distance.toFixed(1)} km</Text>
+          <Text style={styles.statValue}>{summary?.totalDistance.toFixed(1)} km</Text>
         </View>
 
         <View style={[styles.statBox, styles.ordersBox]}>
           <Text style={styles.statLabel}>Orders</Text>
-          <Text style={styles.statValue}>{dailySummary.orders.length}</Text>
+          <Text style={styles.statValue}>{summary?.totalOrders || 0}</Text>
         </View>
       </View>
 
-      <View style={styles.totalAmountContainer}>
+      <View style={[styles.statBox, styles.amountBox]}>
         <Text style={styles.statLabel}>Total Amount</Text>
-        <Text style={styles.totalAmount}>₹{dailySummary.totalAmount}</Text>
+        <Text style={styles.statValue}>₹{summary?.totalAmount || 0}</Text>
       </View>
 
-      <View style={styles.orderHistoryContainer}>
-        <Text style={styles.orderHistoryTitle}>Order History</Text>
-        <ScrollView>
-          {dailySummary.orders.map((order, index) => (
-            <View key={index} style={styles.orderItem}>
-              <View>
-                <Text style={styles.shopName}>{order.shopName}</Text>
-                <Text style={styles.itemCount}>{order.items.length} items</Text>
-              </View>
-              <View>
-                <Text style={styles.orderTime}>
-                  {new Date(order.timestamp).toLocaleTimeString([], { 
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: true 
-                  })}
-                </Text>
-                <Text style={styles.orderAmount}>₹{order.total}</Text>
-              </View>
-            </View>
-          ))}
-        </ScrollView>
-      </View>
-    </SafeAreaView>
+      <Text style={styles.sectionTitle}>Order History</Text>
+
+      {Object.entries(summary?.shopSummaries || {}).map(([shopId, shop]) => (
+        <TouchableOpacity
+          key={shopId}
+          style={styles.shopContainer}
+          onPress={() => handleShopPress(shop.shopName, shop.area, shop.products)}
+        >
+          <View style={styles.shopInfo}>
+            <Text style={styles.shopName}>{shop.shopName}</Text>
+            <Text style={styles.shopArea}>{shop.area}</Text>
+          </View>
+          <Text style={styles.shopAmount}>₹{shop.totalAmount}</Text>
+        </TouchableOpacity>
+      ))}
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#f5f5f5',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     alignItems: 'center',
-    paddingVertical: 20,
+    padding: 20,
     backgroundColor: '#e8f5e9',
   },
   checkmarkContainer: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#4caf50',
+    backgroundColor: '#34C759',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 10,
   },
   checkmark: {
-    color: '#fff',
-    fontSize: 30,
+    color: 'white',
+    fontSize: 32,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#2e7d32',
+    color: '#34C759',
+    marginBottom: 5,
   },
   subtitle: {
     fontSize: 16,
-    color: '#4caf50',
+    color: '#666',
   },
   statsContainer: {
     flexDirection: 'row',
-    padding: 20,
-    justifyContent: 'space-between',
+    padding: 16,
+    gap: 16,
   },
   statBox: {
     flex: 1,
-    padding: 15,
-    borderRadius: 10,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 16,
+    elevation: 2,
+  },
+  distanceBox: {
     backgroundColor: '#f5f5f5',
-    marginHorizontal: 5,
   },
   ordersBox: {
-    backgroundColor: '#f3e5f5',
+    backgroundColor: '#f8f0ff',
+  },
+  amountBox: {
+    margin: 16,
+    marginTop: 0,
+    backgroundColor: '#e8f5e9',
   },
   statLabel: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#666',
+    marginBottom: 4,
   },
   statValue: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
-    marginTop: 5,
+    color: '#333',
   },
-  totalAmountContainer: {
-    padding: 20,
-    backgroundColor: '#e8f5e9',
-    margin: 10,
-    borderRadius: 10,
-  },
-  totalAmount: {
-    fontSize: 28,
+  sectionTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#2e7d32',
+    color: '#333',
+    margin: 16,
+    marginBottom: 8,
   },
-  orderHistoryContainer: {
-    flex: 1,
-    padding: 20,
-  },
-  orderHistoryTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  orderItem: {
+  shopContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    margin: 16,
+    marginTop: 8,
+    borderRadius: 12,
+    padding: 16,
+    elevation: 2,
+  },
+  shopInfo: {
+    flex: 1,
   },
   shopName: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
   },
-  itemCount: {
+  shopArea: {
+    fontSize: 14,
     color: '#666',
-    marginTop: 4,
   },
-  orderTime: {
-    color: '#666',
-    textAlign: 'right',
-  },
-  orderAmount: {
-    fontSize: 16,
+  shopAmount: {
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#2e7d32',
-    marginTop: 4,
+    color: '#34C759',
   },
 });
 

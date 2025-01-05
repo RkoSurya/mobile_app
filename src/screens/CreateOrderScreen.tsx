@@ -7,166 +7,321 @@ import {
   TouchableOpacity,
   SafeAreaView,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
-import { useOrders } from '../context/OrderContext';
-import { NavigationProp } from '../types/navigation';
+import { createOrder, LineItem } from '../services/firestoreService';
+import auth from '@react-native-firebase/auth';
 
 type RouteParams = {
   CreateOrder: {
     shop: {
       id: string;
       name: string;
+      area: string;
       distance: number;
     };
   };
 };
 
-interface LineItem {
-  productCode: string;
-  quantity: string;
-  price: string;
-  uom: string;
-}
-
-interface Order {
-  shopId: string;
-  shopName: string;
-  items: LineItem[];
-  total: number;
-  timestamp: string;
-}
-
 const CreateOrderScreen = () => {
-  const navigation = useNavigation<NavigationProp>();
-  const { addOrder } = useOrders();
+  const navigation = useNavigation();
   const route = useRoute<RouteProp<RouteParams, 'CreateOrder'>>();
-  
-  // Add error handling for route params
+  const [lineItems, setLineItems] = useState<LineItem[]>([]);
+  const [currentItem, setCurrentItem] = useState<LineItem>({
+    product_name: '',
+    quantity: 0,
+    uom: '',
+    amount: 0
+  });
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'online' | 'credit'>('cash');
+  const [paymentStatus, setPaymentStatus] = useState<'pending' | 'completed' | 'failed'>('pending');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+  // UOM options
+  const uomOptions = [
+    { label: 'Select UOM', value: '' },
+    { label: 'Pieces', value: 'PCS' },
+    { label: 'Kilograms', value: 'KG' },
+    { label: 'Liters', value: 'L' },
+    { label: 'Boxes', value: 'BOX' },
+    { label: 'Dozens', value: 'DOZ' },
+    { label: 'Packets', value: 'PKT' }
+  ];
+
+  // Payment method options
+  const paymentMethodOptions = [
+    { label: 'Cash', value: 'cash' },
+    { label: 'Online', value: 'online' },
+    { label: 'Credit', value: 'credit' }
+  ];
+
+  // Payment status options
+  const paymentStatusOptions = [
+    { label: 'Pending', value: 'pending' },
+    { label: 'Completed', value: 'completed' },
+    { label: 'Failed', value: 'failed' }
+  ];
+
   if (!route.params?.shop) {
-    console.error('No shop data provided to CreateOrderScreen');
     return (
       <SafeAreaView style={styles.container}>
         <Text style={styles.errorText}>Error: No shop data available</Text>
       </SafeAreaView>
     );
   }
-  
-  const { shop } = route.params;
 
-  const [lineItems, setLineItems] = useState<LineItem[]>([]);
-  const [currentItem, setCurrentItem] = useState<LineItem>({
-    productCode: '',
-    quantity: '',
-    price: '',
-    uom: '',
-  });
-
-  const addLineItem = () => {
-    if (currentItem.productCode && currentItem.quantity && currentItem.price && currentItem.uom) {
-      const newItem = {
-        productCode: currentItem.productCode,
-        quantity: currentItem.quantity,
-        price: currentItem.price,
-        uom: currentItem.uom,
-      };
-      setLineItems([...lineItems, newItem]);
-      setCurrentItem({
-        productCode: '',
-        quantity: '',
-        price: '',
-        uom: '',
-      });
-    } else {
-      console.error('All fields must be filled out to add a line item.');
+  const handleAddItem = () => {
+    if (!currentItem.product_name || !currentItem.quantity || !currentItem.uom || !currentItem.amount) {
+      Alert.alert('Error', 'Please fill in all item details');
+      return;
     }
+
+    if (editingIndex !== null) {
+      // Update existing item
+      const newItems = [...lineItems];
+      newItems[editingIndex] = currentItem;
+      setLineItems(newItems);
+      setEditingIndex(null);
+    } else {
+      // Add new item
+      setLineItems([...lineItems, currentItem]);
+    }
+
+    // Reset form
+    setCurrentItem({
+      product_name: '',
+      quantity: 0,
+      uom: '',
+      amount: 0
+    });
+  };
+
+  const handleEditItem = (index: number) => {
+    setCurrentItem(lineItems[index]);
+    setEditingIndex(index);
+  };
+
+  const handleDeleteItem = (index: number) => {
+    Alert.alert(
+      'Delete Item',
+      'Are you sure you want to delete this item?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Delete',
+          onPress: () => {
+            const newItems = lineItems.filter((_, i) => i !== index);
+            setLineItems(newItems);
+          },
+          style: 'destructive'
+        }
+      ]
+    );
   };
 
   const calculateTotal = () => {
-    return lineItems.reduce((sum, item) => {
-      return sum + (parseFloat(item.price) * parseFloat(item.quantity) || 0);
-    }, 0).toFixed(2);
+    return lineItems.reduce((sum, item) => sum + item.amount, 0);
   };
 
-  const handleSubmitOrder = () => {
-    const total = lineItems.reduce((sum, item) => {
-      return sum + (parseFloat(item.price) * parseFloat(item.quantity) || 0);
-    }, 0);
+  const handleCreateOrder = async () => {
+    try {
+      const currentUser = auth().currentUser;
+      if (!currentUser) {
+        Alert.alert('Error', 'You must be logged in to create an order');
+        return;
+      }
 
-    const order = {
-      shopId: shop.id,
-      shopName: shop.name,
-      items: lineItems,
-      total,
-      timestamp: new Date().toISOString(),
-    } as Order;
+      if (lineItems.length === 0) {
+        Alert.alert('Error', 'Please add at least one item');
+        return;
+      }
 
-    addOrder(order);
-    navigation.navigate('NearbyShops');
+      const orderData = {
+        shop_id: route.params.shop.id,
+        shop_name: route.params.shop.name,
+        shop_area: route.params.shop.area,
+        user_id: currentUser.uid,
+        user_email: currentUser.email || '',
+        line_items: lineItems,
+        total_amount: calculateTotal(),
+        payment_method: paymentMethod,
+      };
+
+      await createOrder(orderData);
+      Alert.alert('Success', 'Order created successfully');
+      navigation.goBack();
+    } catch (error) {
+      console.error('Error creating order:', error);
+      Alert.alert('Error', 'Failed to create order. Please try again.');
+    }
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView>
-        <Text style={styles.title}>Create Order for {shop.name}</Text>
-        
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Product Code"
-            value={currentItem.productCode}
-            onChangeText={(text: string) => setCurrentItem({ ...currentItem, productCode: text })}
-          />
-          
-          <View style={styles.row}>
-            <TextInput
-              style={[styles.input, styles.halfInput]}
-              placeholder="Quantity"
-              value={currentItem.quantity}
-              onChangeText={(text: string) => setCurrentItem({ ...currentItem, quantity: text })}
-              keyboardType="numeric"
-            />
-            
-            <TextInput
-              style={[styles.input, styles.halfInput]}
-              placeholder="Price"
-              value={currentItem.price}
-              onChangeText={(text: string) => setCurrentItem({ ...currentItem, price: text })}
-              keyboardType="numeric"
-            />
-          </View>
-
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={currentItem.uom}
-              onValueChange={(value: string) => setCurrentItem({ ...currentItem, uom: value })}
-              style={styles.picker}
-            >
-              <Picker.Item label="Select UOM" value="" />
-              <Picker.Item label="Pieces" value="PCS" />
-              <Picker.Item label="Kilograms" value="KG" />
-              <Picker.Item label="Boxes" value="BOX" />
-            </Picker>
-          </View>
-        </View>
-
-        <TouchableOpacity style={styles.addButton} onPress={addLineItem}>
-          <Text style={styles.addButtonText}>+ Add Line Item</Text>
-        </TouchableOpacity>
-
-        <View style={styles.totalContainer}>
-          <Text style={styles.totalText}>Total: ₹{calculateTotal()}</Text>
-        </View>
-
-        <TouchableOpacity 
-          style={styles.submitButton}
-          onPress={handleSubmitOrder}
-        >
-          <Text style={styles.submitButtonText}>
-            Submit Order ({lineItems.length} items)
+      <ScrollView style={styles.scrollView}>
+        <View style={styles.header}>
+          <Text style={styles.shopName}>{route.params.shop.name}</Text>
+          <Text style={styles.distance}>
+            {(route.params.shop.distance / 1000).toFixed(2)} km away
           </Text>
-        </TouchableOpacity>
+        </View>
+
+        <View style={styles.itemForm}>
+          <View style={styles.row}>
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Product Name</Text>
+              <TextInput
+                style={styles.input}
+                value={currentItem.product_name}
+                onChangeText={(text) => setCurrentItem({ ...currentItem, product_name: text })}
+                placeholder="Enter product name"
+              />
+            </View>
+
+            <TouchableOpacity 
+              style={[styles.addButton, editingIndex !== null && styles.editButton]} 
+              onPress={handleAddItem}
+            >
+              <Text style={styles.buttonText}>{editingIndex !== null ? '✓' : '+'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.inputContainer, { flex: 1 }]}>
+              <Text style={styles.label}>Quantity</Text>
+              <TextInput
+                style={styles.input}
+                value={currentItem.quantity.toString()}
+                onChangeText={(text) => setCurrentItem({ ...currentItem, quantity: parseFloat(text) || 0 })}
+                keyboardType="numeric"
+                placeholder="0"
+              />
+            </View>
+
+            <View style={[styles.inputContainer, { flex: 1 }]}>
+              <Text style={styles.label}>UOM</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={currentItem.uom}
+                  onValueChange={(value) => setCurrentItem({ ...currentItem, uom: value })}
+                  style={[styles.picker, { color: '#000000' }]}
+                  dropdownIconColor="#000000"
+                >
+                  {uomOptions.map((option) => (
+                    <Picker.Item 
+                      key={option.value} 
+                      label={option.label} 
+                      value={option.value}
+                      style={{ 
+                        color: '#000000',
+                        backgroundColor: '#ffffff',
+                        fontSize: 16
+                      }}
+                    />
+                  ))}
+                </Picker>
+              </View>
+            </View>
+
+            <View style={[styles.inputContainer, { flex: 1 }]}>
+              <Text style={styles.label}>Amount</Text>
+              <TextInput
+                style={styles.input}
+                value={currentItem.amount.toString()}
+                onChangeText={(text) => setCurrentItem({ ...currentItem, amount: parseFloat(text) || 0 })}
+                keyboardType="numeric"
+                placeholder="₹0"
+              />
+            </View>
+          </View>
+        </View>
+
+        {lineItems.length > 0 && (
+          <View style={styles.itemsList}>
+            {lineItems.map((item, index) => (
+              <View key={index} style={styles.itemRow}>
+                <View style={styles.itemInfo}>
+                  <Text style={styles.itemName}>{item.product_name}</Text>
+                  <Text style={styles.itemDetails}>
+                    {item.quantity} {item.uom} × ₹{item.amount}
+                  </Text>
+                </View>
+                <View style={styles.itemActions}>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, styles.editActionButton]}
+                    onPress={() => handleEditItem(index)}
+                  >
+                    <Text style={styles.actionButtonText}>✎</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, styles.deleteActionButton]}
+                    onPress={() => handleDeleteItem(index)}
+                  >
+                    <Text style={styles.actionButtonText}>×</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+
+            <View style={styles.totalSection}>
+              <Text style={styles.totalLabel}>Total Amount:</Text>
+              <Text style={styles.totalAmount}>₹{calculateTotal()}</Text>
+            </View>
+
+            <View style={styles.paymentSection}>
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Payment Method</Text>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={paymentMethod}
+                    onValueChange={(value) => setPaymentMethod(value as typeof paymentMethod)}
+                    style={[styles.picker, { color: '#000000' }]}
+                    dropdownIconColor="#000000"
+                  >
+                    {paymentMethodOptions.map((option) => (
+                      <Picker.Item 
+                        key={option.value} 
+                        label={option.label} 
+                        value={option.value}
+                        style={{ color: '#000000', backgroundColor: '#ffffff' }}
+                      />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Payment Status</Text>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={paymentStatus}
+                    onValueChange={(value) => setPaymentStatus(value as typeof paymentStatus)}
+                    style={[styles.picker, { color: '#000000' }]}
+                    dropdownIconColor="#000000"
+                  >
+                    {paymentStatusOptions.map((option) => (
+                      <Picker.Item 
+                        key={option.value} 
+                        label={option.label} 
+                        value={option.value}
+                        style={{ color: '#000000', backgroundColor: '#ffffff' }}
+                      />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+            </View>
+
+            <TouchableOpacity style={styles.createButton} onPress={handleCreateOrder}>
+              <Text style={styles.buttonText}>Create Order</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -177,77 +332,167 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
+  scrollView: {
+    flex: 1,
     padding: 16,
   },
-  inputContainer: {
+  header: {
+    marginBottom: 24,
+  },
+  shopName: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  distance: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 4,
+  },
+  itemForm: {
+    backgroundColor: '#f8f9fa',
     padding: 16,
+    borderRadius: 12,
+    marginBottom: 24,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 12,
+    marginBottom: 16,
+  },
+  inputContainer: {
+    flex: 3,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
   },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 8,
     padding: 12,
-    marginBottom: 12,
+    fontSize: 16,
     backgroundColor: '#fff',
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  halfInput: {
-    width: '48%',
   },
   pickerContainer: {
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 8,
-    marginBottom: 12,
-  },
-  picker: {
+    backgroundColor: '#ffffff',
+    overflow: 'hidden',
+    elevation: 2,
     height: 50,
   },
-  addButton: {
-    backgroundColor: '#4285f4',
-    padding: 16,
-    margin: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  addButtonText: {
-    color: '#fff',
+  picker: {
+    width: '100%',
+    backgroundColor: '#ffffff',
+    color: '#000000',
+    height: 50,
     fontSize: 16,
+  },
+  addButton: {
+    backgroundColor: '#007AFF',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 24,
     fontWeight: '600',
   },
-  totalContainer: {
+  itemsList: {
+    backgroundColor: '#f8f9fa',
     padding: 16,
-    borderTopWidth: 1,
+    borderRadius: 12,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+  },
+  itemInfo: {
+    flex: 1,
+  },
+  itemActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editActionButton: {
+    backgroundColor: '#007AFF',
+  },
+  deleteActionButton: {
+    backgroundColor: '#FF3B30',
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  editButton: {
+    backgroundColor: '#34C759',
+  },
+  itemName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  itemDetails: {
+    fontSize: 14,
+    color: '#666',
+  },
+  totalSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 2,
     borderTopColor: '#ddd',
   },
-  totalText: {
+  totalLabel: {
     fontSize: 18,
     fontWeight: 'bold',
-    textAlign: 'right',
+    color: '#333',
   },
-  submitButton: {
-    backgroundColor: '#34a853',
+  totalAmount: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#007AFF',
+  },
+  paymentSection: {
+    marginTop: 16,
+    gap: 16,
+  },
+  createButton: {
+    backgroundColor: '#34C759',
     padding: 16,
-    margin: 16,
     borderRadius: 8,
     alignItems: 'center',
-  },
-  submitButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    marginTop: 24,
   },
   errorText: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: 'red',
+    fontSize: 16,
     textAlign: 'center',
-    padding: 16,
+    margin: 16,
   },
 });
 

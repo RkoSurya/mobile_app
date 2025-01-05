@@ -1,169 +1,210 @@
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Platform,
-  Dimensions,
-  Alert,
-  PermissionsAndroid,
-  AppState,
-  AppStateStatus,
-} from 'react-native';
-import Geolocation, { GeolocationResponse, GeolocationError } from '@react-native-community/geolocation';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, StyleSheet, Text, TouchableOpacity, PermissionsAndroid } from 'react-native';
+import Geolocation from '@react-native-community/geolocation';
+import BackgroundTimer from 'react-native-background-timer';
+import DeviceInfo from 'react-native-device-info';
+import auth from '@react-native-firebase/auth';
+import { addLocationData } from '../services/firestoreService';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { NavigationProp, RootStackParamList } from '../types/navigation';
 import { check, request, PERMISSIONS, RESULTS, openSettings } from 'react-native-permissions';
-import { addLocationData } from '../services/firestoreService';
-import DeviceInfo from 'react-native-device-info';
-import BackgroundTimer from 'react-native-background-timer';
-import auth from '@react-native-firebase/auth';
 
-// Configure geolocation with better settings
-Geolocation.setRNConfiguration({
-  skipPermissionRequests: false,
-  authorizationLevel: 'whenInUse',
-  locationProvider: 'auto'
-});
-
-export interface Location {
+interface Location {
   latitude: number;
   longitude: number;
+  accuracy: number;
 }
 
-const TrackingScreen = () => {
-  const navigation = useNavigation<NavigationProp>();
-  const route = useRoute<RouteProp<RootStackParamList, 'Tracking'>>();
-  const shouldResume = route.params?.shouldResume;
-  const [isTracking, setIsTracking] = useState(() => route.params?.shouldResume || false);
-  const isTrackingRef = useRef(route.params?.shouldResume || false);
+interface TrackingScreenProps {
+  navigation: NavigationProp<RootStackParamList, 'Tracking'>;
+  route: any;
+}
+
+export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, route }) => {
+  const { shouldResume = false, preserveState = false, initialTime = 0 } = route.params || {};
+  const [isTracking, setIsTracking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
   const [locationHistory, setLocationHistory] = useState<Location[]>([]);
-  const [watchId, setWatchId] = useState<number | null>(null);
   const [distance, setDistance] = useState(0);
-  const [time, setTime] = useState(0);
-  const [timerInterval, setTimerInterval] = useState<number | null>(null);
-  const [firestoreInterval, setFirestoreInterval] = useState<number | null>(null);
-  const appState = useRef(AppState.currentState);
+  const [time, setTime] = useState(initialTime);
+  const timerIntervalRef = useRef<number | null>(null);
+  const locationWatchIdRef = useRef<number | null>(null);
+  const firestoreIntervalRef = useRef<number | null>(null);
 
   const requestAndroidPermission = async () => {
     try {
       const granted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         {
-          title: 'Location Permission',
-          message: 'This app needs access to your location.',
-          buttonNeutral: 'Ask Me Later',
-          buttonNegative: 'Cancel',
-          buttonPositive: 'OK',
-        },
+          title: "Location Permission",
+          message: "App needs access to location for tracking",
+          buttonNeutral: "Ask Me Later",
+          buttonNegative: "Cancel",
+          buttonPositive: "OK"
+        }
       );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
+      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+        console.log('Location permission granted');
+        return true;
+      } else {
+        console.log('Location permission denied');
+        return false;
+      }
     } catch (err) {
-      console.warn(err);
+      console.warn('Error requesting location permission:', err);
       return false;
     }
   };
 
-  const checkLocationPermission = async () => {
-    if (Platform.OS === 'android') {
-      return await requestAndroidPermission();
-    }
-    return true;
+  const getCurrentPosition = (): Promise<GeolocationPosition> => {
+    return new Promise((resolve, reject) => {
+      Geolocation.getCurrentPosition(
+        position => resolve(position),
+        error => reject(error),
+        {
+          enableHighAccuracy: false,
+          timeout: 15000,
+          maximumAge: 10000
+        }
+      );
+    });
   };
 
-  const getCurrentLocation = () => {
-    const handleLocationError = (error: GeolocationError) => {
-      console.log('Location error:', error);
-      let message = 'An unknown error occurred while getting your location.';
-      
-      switch (error.code) {
-        case 1: // PERMISSION_DENIED
-          message = 'Location permission was denied. Please enable location services to use this feature.';
-          break;
-        case 2: // POSITION_UNAVAILABLE
-          message = 'Location information is currently unavailable. Please try again in a few moments.';
-          break;
-        case 3: // TIMEOUT
-          message = 'Location request timed out. Please check your internet connection and try again.';
-          break;
-        case 4: // ACTIVITY_NULL
-          message = 'Location services are not active. Please enable location services and try again.';
-          break;
-      }
+  // Timer effect
+  useEffect(() => {
+    if (!isPaused && isTracking) {
+      timerIntervalRef.current = BackgroundTimer.setInterval(() => {
+        setTime((prevTime: number) => prevTime + 1);
+      }, 1000);
+    }
 
-      Alert.alert(
-        'Location Error',
-        message,
-        [
-          { text: 'Try Again', onPress: () => getCurrentLocation() },
-          { text: 'Open Settings', onPress: () => openSettings() }
-        ]
-      );
+    return () => {
+      if (timerIntervalRef.current !== null) {
+        BackgroundTimer.clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+    };
+  }, [isPaused, isTracking]);
+
+  // Location tracking effect
+  useEffect(() => {
+    const startLocationTracking = async () => {
+      try {
+        const hasPermission = await requestAndroidPermission();
+        if (!hasPermission) {
+          console.log('Location permission not granted');
+          return;
+        }
+
+        locationWatchIdRef.current = Geolocation.watchPosition(
+          position => {
+            const newLocation = {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+              accuracy: position.coords.accuracy || 0
+            };
+            setCurrentLocation(newLocation);
+            setLocationHistory(prev => [...prev, newLocation]);
+          },
+          error => console.error('Error watching position:', error),
+          {
+            enableHighAccuracy: false,
+            distanceFilter: 10,
+            interval: 5000,
+            fastestInterval: 2000
+          }
+        );
+      } catch (error) {
+        console.error('Error starting location tracking:', error);
+      }
     };
 
-    Geolocation.getCurrentPosition(
-      (position) => {
-        console.log('Location retrieved:', position);
-        const { latitude, longitude } = position.coords;
-        setCurrentLocation({ latitude, longitude });
-      },
-      (error) => {
-        // If high accuracy fails with timeout, retry with lower accuracy
-        if (error.code === 3) {
-          Geolocation.getCurrentPosition(
-            (position) => {
-              console.log('Location retrieved with low accuracy:', position);
-              const { latitude, longitude } = position.coords;
-              setCurrentLocation({ latitude, longitude });
-            },
-            handleLocationError,
-            {
-              enableHighAccuracy: false,
-              timeout: 20000,
-              maximumAge: 30000
-            }
-          );
-        } else {
-          handleLocationError(error);
-        }
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 10000,
-        distanceFilter: 10
-      }
-    );
-  };
+    if (!isPaused && isTracking) {
+      startLocationTracking();
+    }
 
-  const stopTracking = () => {
-    if (watchId !== null) {
-      Geolocation.clearWatch(watchId);
-      setWatchId(null);
+    return () => {
+      if (locationWatchIdRef.current !== null) {
+        Geolocation.clearWatch(locationWatchIdRef.current);
+        locationWatchIdRef.current = null;
+      }
+    };
+  }, [isPaused, isTracking]);
+
+  // Firestore updates effect
+  useEffect(() => {
+    if (!isPaused && isTracking && currentLocation) {
+      const updateFirestore = async () => {
+        try {
+          const currentUser = auth().currentUser;
+          if (!currentUser?.uid) return;
+
+          const batteryLevel = await DeviceInfo.getBatteryLevel();
+          
+          await addLocationData(currentUser.uid, 'daily_journey_' + new Date().toISOString().split('T')[0], {
+            latitude: currentLocation.latitude,
+            longitude: currentLocation.longitude,
+            accuracy: currentLocation.accuracy,
+            batteryLevel,
+            eventType: 'day_tracking',
+            timestamp: new Date().toISOString()
+          });
+        } catch (error) {
+          console.error('Error updating location:', error);
+        }
+      };
+
+      firestoreIntervalRef.current = BackgroundTimer.setInterval(updateFirestore, 60000);
+      // Initial update
+      updateFirestore();
     }
-    if (timerInterval) {
-      BackgroundTimer.clearInterval(timerInterval);
-      setTimerInterval(null);
+
+    return () => {
+      if (firestoreIntervalRef.current !== null) {
+        BackgroundTimer.clearInterval(firestoreIntervalRef.current);
+        firestoreIntervalRef.current = null;
+      }
+    };
+  }, [isPaused, isTracking, currentLocation]);
+
+  // Navigation focus/blur effect
+  useEffect(() => {
+    const unsubscribeFocus = navigation.addListener('focus', () => {
+      if (!isPaused) {
+        setIsTracking(true);
+      }
+    });
+
+    const unsubscribeBlur = navigation.addListener('blur', () => {
+      setIsTracking(false);
+    });
+
+    // Start tracking initially if not paused
+    if (!isPaused) {
+      setIsTracking(true);
     }
-    // Clear any pending geolocation requests
-    Geolocation.stopObserving();
+
+    return () => {
+      setIsTracking(false);
+      unsubscribeFocus();
+      unsubscribeBlur();
+    };
+  }, [navigation, isPaused]);
+
+  const handleEndDayOnTracking = async () => {
+    setIsTracking(false);
+    setIsPaused(true);
+    setTime(0);
+    setCurrentLocation(null);
+    setLocationHistory([]);
+    setDistance(0);
+    navigation.navigate('Home');
   };
 
   const handleShopReached = () => {
-    // Keep tracking active but pause location updates
-    if (watchId !== null) {
-      Geolocation.clearWatch(watchId);
-      setWatchId(null);
-    }
-
-    // Keep tracking state true so timer continues
-    isTrackingRef.current = true;
-    setIsTracking(true);
-
-    // Navigate to nearby shops
+    setIsPaused(true);
+    setIsTracking(false);
     navigation.navigate('NearbyShops', {
       currentLocation: currentLocation ? {
         coords: {
@@ -178,349 +219,10 @@ const TrackingScreen = () => {
         timestamp: Date.now()
       } : null,
       distance: distance,
-      time: time
+      currentTime: time,
+      journeyId: 'daily_journey_' + new Date().toISOString().split('T')[0]
     });
   };
-
-  const stopLocationTracking = () => {
-    // Clear watch
-    if (watchId !== null) {
-      Geolocation.clearWatch(watchId);
-      setWatchId(null);
-    }
-    // Stop all observers
-    Geolocation.stopObserving();
-  };
-
-  const handleEndDayOnTracking = async () => {
-    console.log('Ending day on Tracking page - Starting cleanup');
-    
-    // Immediately prevent new updates
-    isTrackingRef.current = false;
-    setIsTracking(false);
-    
-    try {
-      // 1. Stop location tracking first to prevent any new updates
-      stopLocationTracking();
-      
-      // 2. Stop Firestore updates
-      stopFirestoreUpdates();
-      
-      // 3. Stop timer
-      if (timerInterval) {
-        BackgroundTimer.clearInterval(timerInterval);
-        setTimerInterval(null);
-      }
-      
-      // 4. Reset all states
-      setIsPaused(false);
-      setCurrentLocation(null);
-      setLocationHistory([]);
-      setDistance(0);
-      setTime(0);
-      
-      // 5. Final cleanup
-      BackgroundTimer.stopBackgroundTimer();
-      
-      // 6. Double check location tracking is stopped
-      stopLocationTracking();
-      
-      // Wait for cleanup to complete
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      console.log('All tracking processes stopped successfully');
-      
-      // Final check before navigation
-      stopLocationTracking();
-      navigation.navigate('Home');
-    } catch (error) {
-      console.error('Error during cleanup:', error);
-      // Ensure location is stopped even on error
-      stopLocationTracking();
-      navigation.navigate('Home');
-    }
-  };
-
-  const requestLocationPermission = async () => {
-    const result = await check(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION);
-    if (result !== RESULTS.GRANTED) {
-      const requestResult = await request(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION);
-      if (requestResult !== RESULTS.GRANTED) {
-        Alert.alert('Permission Required', 'Location permission is needed to access your current location.');
-      }
-    }
-  };
-
-  const checkLocationServices = async () => {
-    const result = await check(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION);
-    if (result !== RESULTS.GRANTED) {
-      Alert.alert(
-        'Location Services Disabled',
-        'Please enable location services to continue.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Enable', onPress: () => openSettings() },
-        ]
-      );
-    }
-  };
-
-  const handleAppStateChange = (nextAppState: AppStateStatus) => {
-    if (
-      appState.current.match(/inactive|background/) &&
-      nextAppState === 'active'
-    ) {
-      console.log('App has come to the foreground!');
-    }
-    appState.current = nextAppState;
-  };
-
-  const startTimer = () => {
-    // Clear any existing timer
-    if (timerInterval) {
-      BackgroundTimer.clearInterval(timerInterval);
-    }
-    
-    // Start a new timer that works in background
-    const newInterval = BackgroundTimer.setInterval(() => {
-      setTime(prevTime => prevTime + 1);
-    }, 1000);
-    
-    setTimerInterval(newInterval);
-  };
-
-  const stopTimer = () => {
-    if (timerInterval) {
-      BackgroundTimer.clearInterval(timerInterval);
-      setTimerInterval(null);
-    }
-  };
-
-  const pauseTimer = () => {
-    if (timerInterval) {
-      BackgroundTimer.clearInterval(timerInterval);
-      setTimerInterval(null);
-    }
-  };
-
-  const resumeTimer = () => {
-    startTimer();
-  };
-
-  const getLocationWithRetry = async (retryCount = 3): Promise<GeolocationResponse> => {
-    return new Promise((resolve, reject) => {
-      const tryGetLocation = (attemptsLeft: number) => {
-        Geolocation.getCurrentPosition(
-          (position) => {
-            resolve(position);
-          },
-          (error) => {
-            console.log(`Location attempt failed, ${attemptsLeft} attempts left:`, error);
-            if (attemptsLeft > 0) {
-              // Retry with lower accuracy if we have attempts left
-              Geolocation.getCurrentPosition(
-                (position) => {
-                  resolve(position);
-                },
-                (retryError) => {
-                  if (attemptsLeft > 1) {
-                    setTimeout(() => tryGetLocation(attemptsLeft - 1), 2000);
-                  } else {
-                    reject(retryError);
-                  }
-                },
-                {
-                  enableHighAccuracy: false,
-                  timeout: 30000,
-                  maximumAge: 60000,
-                  distanceFilter: 10
-                }
-              );
-            } else {
-              reject(error);
-            }
-          },
-          {
-            enableHighAccuracy: true,
-            timeout: 20000,
-            maximumAge: 30000,
-            distanceFilter: 5
-          }
-        );
-      };
-
-      tryGetLocation(retryCount);
-    });
-  };
-
-  const startFirestoreUpdates = () => {
-    console.log('Starting Firestore updates');
-    // Clear any existing interval first
-    stopFirestoreUpdates();
-
-    // Set interval to exactly 1 minute (60000 ms)
-    const newInterval = BackgroundTimer.setInterval(async () => {
-      // Immediately exit if tracking is stopped
-      if (!isTrackingRef.current) {
-        console.log('Tracking stopped, clearing Firestore interval');
-        stopFirestoreUpdates();
-        return;
-      }
-      
-      try {
-        // Get location with retry mechanism
-        const position = await getLocationWithRetry();
-        const { latitude, longitude, accuracy } = position.coords;
-        const batteryLevel = await DeviceInfo.getBatteryLevel();
-        
-        // Double check tracking state before update
-        if (!isTrackingRef.current) {
-          console.log('Tracking stopped before Firestore update, skipping');
-          stopFirestoreUpdates();
-          return;
-        }
-
-        console.log("Updating Firestore - 1 minute interval");
-        const currentUser = auth().currentUser;
-        if (!currentUser?.uid) {
-          console.log('No user ID found, skipping Firestore update');
-          return;
-        }
-        await addLocationData(currentUser.uid, 'your_journey_id', {
-          latitude,
-          longitude,
-          accuracy,
-          batteryLevel,
-          eventType: 'day_tracking',
-          timestamp: new Date().toISOString()
-        });
-        console.log("Firestore update successful");
-      } catch (error) {
-        console.log("Error updating Firestore:", error);
-      }
-    }, 60000);
-
-    setFirestoreInterval(newInterval);
-  };
-
-  const stopFirestoreUpdates = () => {
-    console.log('Stopping Firestore updates');
-    // Clear the interval using both the ref and the stored interval
-    if (firestoreInterval) {
-      console.log('Clearing interval:', firestoreInterval);
-      BackgroundTimer.clearInterval(firestoreInterval);
-      setFirestoreInterval(null);
-    }
-    
-    // Force clear all intervals as a safety measure
-    BackgroundTimer.stopBackgroundTimer();
-    console.log('All background timers stopped');
-  };
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
-    return () => {
-      subscription.remove();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isTracking && !isPaused) {
-      startTimer();
-    } else {
-      stopTimer();
-    }
-
-    return () => {
-      if (timerInterval) {
-        BackgroundTimer.clearInterval(timerInterval);
-      }
-    };
-  }, [isTracking, isPaused]);
-
-  useEffect(() => {
-    console.log('TrackingScreen mounted with shouldResume:', shouldResume);
-    if (shouldResume) {
-      setIsTracking(true);
-    } else {
-      setIsTracking(false);
-      if (timerInterval) {
-        BackgroundTimer.clearInterval(timerInterval);
-        setTimerInterval(null);
-      }
-    }
-  }, [shouldResume]);
-
-  useEffect(() => {
-    console.log('isTracking state changed:', isTracking);
-    if (isTracking) {
-      // Start watching position for UI updates with more lenient settings
-      const watchId = Geolocation.watchPosition(
-        (position) => {
-          console.log("Location updated for UI:", position);
-          const { latitude, longitude } = position.coords;
-          setCurrentLocation({ latitude, longitude });
-        },
-        (error) => {
-          console.log("Location error in tracking:", error);
-          if (appState.current === 'active') {
-            Alert.alert(
-              'Location Error',
-              'Unable to track location. Please check if location services are enabled.',
-              [
-                { text: 'OK' },
-                { text: 'Open Settings', onPress: () => openSettings() }
-              ]
-            );
-          }
-        },
-        { 
-          enableHighAccuracy: false, // Less strict for background
-          distanceFilter: 10,
-          interval: 10000, // Increased interval
-          fastestInterval: 5000, // Increased fastest interval
-          maximumAge: 60000 // Allow using location up to 1 minute old
-        }
-      );
-
-      setWatchId(watchId);
-      startFirestoreUpdates();
-    } else {
-      if (watchId !== null) {
-        Geolocation.clearWatch(watchId);
-        console.log("Watch cleared");
-      }
-      stopFirestoreUpdates();
-    }
-
-    return () => {
-      if (watchId !== null) {
-        Geolocation.clearWatch(watchId);
-        console.log("Watch cleared");
-      }
-      stopFirestoreUpdates();
-    };
-  }, [isTracking]);
-
-  useEffect(() => {
-    requestLocationPermission().then(() => getCurrentLocation());
-  }, []);
-
-  useEffect(() => {
-    checkLocationServices();
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      // Cleanup when component unmounts
-      stopLocationTracking();
-      if (timerInterval) {
-        BackgroundTimer.clearInterval(timerInterval);
-      }
-      stopFirestoreUpdates();
-      BackgroundTimer.stopBackgroundTimer();
-    };
-  }, [watchId, timerInterval]);
 
   return (
     <View style={styles.container}>

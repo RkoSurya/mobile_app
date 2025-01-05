@@ -13,6 +13,7 @@ type GeoPosition = {
 };
 
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Shop } from '../services/firestoreService';
 
 export type RootStackParamList = {
   Login: undefined;
@@ -20,19 +21,18 @@ export type RootStackParamList = {
   Tracking: {
     shouldResume?: boolean;
     journeyId?: string;
+    currentTime?: number;
+    preserveState?: boolean;
   };
   NearbyShops: {
     currentLocation: GeoPosition | null;
-    distance: number;
-    time: number;
-  } | undefined;
-  AddShop: undefined;
+    journeyId: string;
+  };
+  AddShop: {
+    currentLocation: GeoPosition | null;
+  };
   CreateOrder: {
-    shop: {
-      id: string;
-      name: string;
-      distance: number;
-    };
+    shop: Shop;
   };
   DaySummary: {
     resetDay: () => void;

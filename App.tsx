@@ -11,6 +11,7 @@ import { OrderProvider } from './src/context/OrderContext';
 import DaySummaryScreen from './src/screens/DaySummaryScreen';
 import { Location } from './src/screens/TrackingScreen';
 import AddShopScreen from './src/screens/AddShopScreen';
+import ShopOrderDetailsScreen from './src/screens/ShopOrderDetailsScreen';
 
 type RootStackParamList = {
   Login: undefined;
@@ -24,6 +25,17 @@ type RootStackParamList = {
   CreateOrder: undefined;
   DaySummary: undefined;
   AddShop: undefined;
+  ShopOrderDetails: {
+    shopName: string;
+    area: string;
+    orders: Array<{
+      product_name: string;
+      quantity: number;
+      uom: string;
+      amount: number;
+    }>;
+    totalAmount: number;
+  };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -64,6 +76,21 @@ function App(): React.JSX.Element {
             options={{ 
               headerShown: true,
               headerTitle: 'Add New Shop',
+              headerStyle: {
+                backgroundColor: '#4c669f',
+              },
+              headerTintColor: '#fff',
+              headerTitleStyle: {
+                fontWeight: 'bold',
+              },
+            }}
+          />
+          <Stack.Screen 
+            name="ShopOrderDetails" 
+            component={ShopOrderDetailsScreen}
+            options={{
+              headerShown: true,
+              title: 'Shop Details',
               headerStyle: {
                 backgroundColor: '#4c669f',
               },
