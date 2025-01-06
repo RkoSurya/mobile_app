@@ -4,7 +4,7 @@ import Geolocation from '@react-native-community/geolocation';
 import BackgroundTimer from 'react-native-background-timer';
 import DeviceInfo from 'react-native-device-info';
 import auth from '@react-native-firebase/auth';
-import { addLocationData } from '../services/firestoreService';
+import { addLocationData, calculateDistance } from '../services/firestoreService';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { NavigationProp, RootStackParamList } from '../types/navigation';
 import { check, request, PERMISSIONS, RESULTS, openSettings } from 'react-native-permissions';
@@ -31,6 +31,7 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
   const timerIntervalRef = useRef<number | null>(null);
   const locationWatchIdRef = useRef<number | null>(null);
   const firestoreIntervalRef = useRef<number | null>(null);
+  const lastLocationRef = useRef<Location | null>(null);
 
   const requestAndroidPermission = async () => {
     try {
@@ -104,6 +105,27 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
               longitude: position.coords.longitude,
               accuracy: position.coords.accuracy || 0
             };
+
+            // Calculate distance if we have a previous location
+            if (lastLocationRef.current) {
+              const newDistanceMeters = calculateDistance(
+                lastLocationRef.current.latitude,
+                lastLocationRef.current.longitude,
+                newLocation.latitude,
+                newLocation.longitude
+              );
+              
+              // Only update distance if accuracy is good enough and distance is reasonable
+              if (newLocation.accuracy < 50 && newDistanceMeters < 100) {
+                const newDistance = (newDistanceMeters / 1000); // Convert to kilometers
+                setDistance(prev => {
+                  const updatedDistance = prev + newDistance;
+                  return Number(updatedDistance.toFixed(3)); // Keep 3 decimal places
+                });
+              }
+            }
+
+            lastLocationRef.current = newLocation;
             setCurrentLocation(newLocation);
             setLocationHistory(prev => [...prev, newLocation]);
           },
@@ -148,10 +170,11 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
             accuracy: currentLocation.accuracy,
             batteryLevel,
             eventType: 'day_tracking',
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            distance: Number(distance.toFixed(3)) // Ensure distance is a number with 3 decimal places
           });
         } catch (error) {
-          console.error('Error updating location:', error);
+          console.error('Error updating Firestore:', error);
         }
       };
 
@@ -218,7 +241,7 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
         },
         timestamp: Date.now()
       } : null,
-      distance: distance,
+      distance: Number(distance.toFixed(3)), // Ensure distance is a number with 3 decimal places
       currentTime: time,
       journeyId: 'daily_journey_' + new Date().toISOString().split('T')[0]
     });
@@ -227,52 +250,54 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerText}>Tracking</Text>
-        <Text style={styles.headerStatus}>{isTracking ? 'Active' : 'Inactive'}</Text>
-      </View>
-      <View style={styles.mapContainer}>
-        <View style={styles.dummyMap}>
-          <Text style={styles.locationText}>
-            {currentLocation 
-              ? `${currentLocation.latitude.toFixed(6)}, ${currentLocation.longitude.toFixed(6)}` 
-              : 'No location data'}
-          </Text>
-        </View>
+        <Text style={styles.title}>Tracking</Text>
+        <Text style={[styles.status, isTracking ? styles.activeStatus : styles.inactiveStatus]}>
+          {isTracking ? 'Active' : 'Inactive'}
+        </Text>
       </View>
 
-      <View style={styles.statsContainer}>
-        <View style={styles.stat}>
-          <Text style={styles.statLabel}>Distance</Text>
-          <Text style={styles.statValue}>{distance.toFixed(2)} km</Text>
+      {currentLocation && (
+        <View style={styles.locationContainer}>
+          <Text style={styles.locationText}>
+            {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
+          </Text>
         </View>
-        <View style={styles.stat}>
+      )}
+
+      <View style={styles.statsContainer}>
+        <View style={styles.statBox}>
+          <Text style={styles.statLabel}>Distance</Text>
+          <Text style={styles.statValue}>{Number(distance.toFixed(3))} km</Text>
+        </View>
+
+        <View style={styles.statBox}>
           <Text style={styles.statLabel}>Time</Text>
           <Text style={styles.statValue}>{time}s</Text>
         </View>
       </View>
 
-      <View style={styles.locationContainer}>
+      <View style={styles.locationInfo}>
         <Text style={styles.locationLabel}>Current Location:</Text>
-        <Text style={styles.locationValue}>
-          {currentLocation 
-            ? `${currentLocation.latitude.toFixed(6)}, ${currentLocation.longitude.toFixed(6)}` 
-            : 'No location data'}
+        <Text style={styles.coordinates}>
+          {currentLocation ? 
+            `${currentLocation.latitude.toFixed(6)}, ${currentLocation.longitude.toFixed(6)}` 
+            : 'Waiting for location...'}
         </Text>
       </View>
 
-      <TouchableOpacity
-        style={[styles.button, styles.shopButton]}
-        onPress={handleShopReached}
-      >
-        <Text style={styles.buttonText}>Shop Reached</Text>
-      </TouchableOpacity>
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity 
+          style={[styles.button, styles.shopButton]} 
+          onPress={handleShopReached}>
+          <Text style={styles.buttonText}>Shop Reached</Text>
+        </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[styles.button, styles.endDayButton]}
-        onPress={handleEndDayOnTracking}
-      >
-        <Text style={styles.buttonText}>End Day</Text>
-      </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.button, styles.endButton]} 
+          onPress={handleEndDayOnTracking}>
+          <Text style={styles.buttonText}>End Day</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
@@ -281,92 +306,86 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+    padding: 20
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
+    marginBottom: 30
   },
-  headerText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
+  title: {
+    fontSize: 32,
+    fontWeight: 'bold'
   },
-  headerStatus: {
+  status: {
     fontSize: 18,
-    color: 'green',
+    fontWeight: '500',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12
   },
-  mapContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f0f0f0',
-    margin: 20,
-    borderRadius: 10,
-    overflow: 'hidden',
+  activeStatus: {
+    color: '#34C759',
   },
-  dummyMap: {
-    width: '100%',
-    height: 200,
-    backgroundColor: '#e0e0e0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  locationText: {
-    fontSize: 16,
-    color: '#999',
+  inactiveStatus: {
+    color: '#FF3B30'
   },
   statsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    padding: 20,
+    justifyContent: 'space-between',
+    marginBottom: 30
   },
-  stat: {
-    alignItems: 'center',
+  statBox: {
+    flex: 1,
+    backgroundColor: '#F2F2F7',
+    borderRadius: 12,
+    padding: 15,
+    marginHorizontal: 5
   },
   statLabel: {
     fontSize: 16,
-    color: '#666',
+    color: '#8E8E93',
+    marginBottom: 5
   },
   statValue: {
+    fontSize: 24,
+    fontWeight: 'bold'
+  },
+  locationInfo: {
+    backgroundColor: '#F2F2F7',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 30
+  },
+  locationLabel: {
+    fontSize: 16,
+    color: '#8E8E93',
+    marginBottom: 5
+  },
+  coordinates: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#000',
+    fontWeight: '500'
+  },
+  buttonContainer: {
+    gap: 15
   },
   button: {
-    margin: 10,
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
+    paddingVertical: 15,
+    borderRadius: 12,
+    alignItems: 'center'
   },
   shopButton: {
-    backgroundColor: '#2196F3',
+    backgroundColor: '#007AFF'
   },
-  endDayButton: {
-    backgroundColor: '#f44336',
+  endButton: {
+    backgroundColor: '#FF3B30'
   },
   buttonText: {
     color: '#fff',
     fontSize: 18,
-    fontWeight: 'bold',
-  },
-  locationContainer: {
-    padding: 20,
-    backgroundColor: '#fff',
-  },
-  locationLabel: {
-    fontSize: 16,
-    color: '#666',
-  },
-  locationValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#000',
-  },
+    fontWeight: '600'
+  }
 });
 
 export default TrackingScreen;

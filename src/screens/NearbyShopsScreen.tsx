@@ -172,7 +172,7 @@ const NearbyShopsScreen = () => {
         <View style={styles.shopInfo}>
           <Text style={styles.shopName}>{shop.name}</Text>
           <Text style={styles.shopArea}>{shop.area}</Text>
-          {shop.distance && (
+          {shop.distance !== undefined && (
             <Text style={styles.shopDistance}>
               {(shop.distance / 1000).toFixed(2)} km away
             </Text>
@@ -188,11 +188,21 @@ const NearbyShopsScreen = () => {
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <Text style={styles.title}>Nearby Shops</Text>
-          <TouchableOpacity
-            style={styles.addShopButton}
-            onPress={handleAddShop}>
-            <Text style={styles.addShopButtonText}>+ Add Shop</Text>
-          </TouchableOpacity>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity
+              style={styles.refreshButton}
+              onPress={() => currentLocation && loadNearbyShops({
+                latitude: currentLocation.coords.latitude,
+                longitude: currentLocation.coords.longitude
+              })}>
+              <Text style={styles.refreshButtonText}>↻ Refresh</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.addShopButton}
+              onPress={handleAddShop}>
+              <Text style={styles.addShopButtonText}>+ Add Shop</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -276,14 +286,15 @@ const styles = StyleSheet.create({
   },
   addShopButton: {
     backgroundColor: '#27ae60',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    flexDirection: 'row',
     alignItems: 'center',
   },
   addShopButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
+    color: '#fff',
+    fontSize: 12,
     fontWeight: '600',
   },
   shopCard: {
@@ -322,6 +333,24 @@ const styles = StyleSheet.create({
   shopPhone: {
     fontSize: 14,
     color: '#27ae60',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  refreshButton: {
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  refreshButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 
