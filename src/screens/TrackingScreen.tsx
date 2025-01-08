@@ -5,7 +5,7 @@ import BackgroundTimer from 'react-native-background-timer';
 import DeviceInfo from 'react-native-device-info';
 import auth from '@react-native-firebase/auth';
 import { addLocationData, calculateDistance } from '../services/firestoreService';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-native-navigation/native';
 import { NavigationProp, RootStackParamList } from '../types/navigation';
 import { check, request, PERMISSIONS, RESULTS, openSettings } from 'react-native-permissions';
 
@@ -21,17 +21,45 @@ interface TrackingScreenProps {
 }
 
 export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, route }) => {
-  const { shouldResume = false, preserveState = false, initialTime = 0 } = route.params || {};
+  const { shouldResume = false, preserveState = false, initialTime = 0, initialDistance = 0 } = route.params || {};
+  
+  // Store these values in refs to persist across re-renders and navigation
+  const updateCountRef = useRef<number>(0);
+  const lastMovementRef = useRef<string>('0m');
+  const lastUpdateTimeRef = useRef<string>('Not updated yet');
+  
   const [isTracking, setIsTracking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
   const [locationHistory, setLocationHistory] = useState<Location[]>([]);
-  const [distance, setDistance] = useState(0);
+  const [distance, setDistance] = useState<number>(initialDistance);
   const [time, setTime] = useState(initialTime);
+  const [lastUpdateTime, setLastUpdateTime] = useState<string>(lastUpdateTimeRef.current);
+  const [lastMovement, setLastMovement] = useState<string>(lastMovementRef.current);
+  const [updateCount, setUpdateCount] = useState<number>(updateCountRef.current);
   const timerIntervalRef = useRef<number | null>(null);
   const locationWatchIdRef = useRef<number | null>(null);
   const firestoreIntervalRef = useRef<number | null>(null);
   const lastLocationRef = useRef<Location | null>(null);
+  const currentUser = auth().currentUser;
+  const todayRef = useRef(new Date().toISOString().split('T')[0]);
+
+  // Reset tracking if it's a new day
+  useEffect(() => {
+    const checkNewDay = () => {
+      const currentDay = new Date().toISOString().split('T')[0];
+      if (currentDay !== todayRef.current) {
+        // It's a new day, reset everything
+        setDistance(0);
+        lastLocationRef.current = null;
+        todayRef.current = currentDay;
+      }
+    };
+
+    // Check for day change every minute
+    const interval = setInterval(checkNewDay, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   const requestAndroidPermission = async () => {
     try {
@@ -75,18 +103,22 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
   // Timer effect
   useEffect(() => {
     if (!isPaused && isTracking) {
-      timerIntervalRef.current = BackgroundTimer.setInterval(() => {
+      // Start background timer
+      BackgroundTimer.start();
+      
+      // Use backgroundTimer.runBackgroundTimer for true background operation
+      timerIntervalRef.current = BackgroundTimer.runBackgroundTimer(() => {
         setTime((prevTime: number) => prevTime + 1);
       }, 1000);
     }
 
     return () => {
-      if (timerIntervalRef.current !== null) {
-        BackgroundTimer.clearInterval(timerIntervalRef.current);
-        timerIntervalRef.current = null;
+      if (timerIntervalRef.current) {
+        BackgroundTimer.stopBackgroundTimer();
+        BackgroundTimer.stop();
       }
     };
-  }, [isPaused, isTracking]);
+  }, [isTracking, isPaused]);
 
   // Location tracking effect
   useEffect(() => {
@@ -105,7 +137,22 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
               longitude: position.coords.longitude,
               accuracy: position.coords.accuracy || 0
             };
-
+            
+            // Update refs and state
+            const currentTime = new Date().toLocaleTimeString();
+            lastUpdateTimeRef.current = currentTime;
+            setLastUpdateTime(currentTime);
+            
+            updateCountRef.current += 1;
+            setUpdateCount(updateCountRef.current);
+            
+            console.log('Location Updated:', {
+              latitude: newLocation.latitude,
+              longitude: newLocation.longitude,
+              accuracy: newLocation.accuracy,
+              time: new Date().toISOString()
+            });
+            
             // Calculate distance if we have a previous location
             if (lastLocationRef.current) {
               const newDistanceMeters = calculateDistance(
@@ -115,11 +162,40 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
                 newLocation.longitude
               );
               
-              // Only update distance if accuracy is good enough and distance is reasonable
-              if (newLocation.accuracy < 50 && newDistanceMeters < 100) {
+              // Update movement indicator with ref
+              const movementText = `${Math.round(newDistanceMeters)}m`;
+              lastMovementRef.current = movementText;
+              setLastMovement(movementText);
+              
+              // Debug logs to verify tracking
+              console.log('New Location:', {
+                latitude: newLocation.latitude,
+                longitude: newLocation.longitude,
+                accuracy: newLocation.accuracy,
+                movement: newDistanceMeters + 'm'
+              });
+              
+              // Update distance if accuracy is reasonable (50m) and movement is not unrealistic (500m)
+              if (newLocation.accuracy < 50 && newDistanceMeters < 500) {
                 const newDistance = (newDistanceMeters / 1000); // Convert to kilometers
-                setDistance(prev => {
+                setDistance(async prev => {
                   const updatedDistance = prev + newDistance;
+                  
+                  // Save the updated distance to Firestore
+                  const today = new Date().toISOString().split('T')[0];
+                  const journeyId = `daily_journey_id_${today}`;  
+                  
+                  // Save location with distance
+                  addLocationData(currentUser.uid, journeyId, {
+                    latitude: newLocation.latitude,
+                    longitude: newLocation.longitude,
+                    accuracy: newLocation.accuracy,
+                    batteryLevel: await DeviceInfo.getBatteryLevel(),
+                    eventType: 'day_tracking',
+                    timestamp: new Date().toISOString(),
+                    distance: newDistance
+                  });
+                  
                   return Number(updatedDistance.toFixed(3)); // Keep 3 decimal places
                 });
               }
@@ -131,10 +207,10 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
           },
           error => console.error('Error watching position:', error),
           {
-            enableHighAccuracy: false,
-            distanceFilter: 10,
-            interval: 5000,
-            fastestInterval: 2000
+            enableHighAccuracy: false, // Set to false as requested
+            distanceFilter: 10, // Only update if moved by 10 meters
+            interval: 60000, // Update every minute
+            fastestInterval: 30000 // Fastest update interval of 30 seconds
           }
         );
       } catch (error) {
@@ -159,12 +235,9 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
     if (!isPaused && isTracking && currentLocation) {
       const updateFirestore = async () => {
         try {
-          const currentUser = auth().currentUser;
-          if (!currentUser?.uid) return;
-
           const batteryLevel = await DeviceInfo.getBatteryLevel();
           
-          await addLocationData(currentUser.uid, 'daily_journey_' + new Date().toISOString().split('T')[0], {
+          await addLocationData(currentUser.uid, `daily_journey_id_${new Date().toISOString().split('T')[0]}`, {
             latitude: currentLocation.latitude,
             longitude: currentLocation.longitude,
             accuracy: currentLocation.accuracy,
@@ -234,7 +307,7 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
           latitude: currentLocation.latitude,
           longitude: currentLocation.longitude,
           altitude: null,
-          accuracy: 0,
+          accuracy: currentLocation.accuracy,
           altitudeAccuracy: null,
           heading: null,
           speed: null,
@@ -243,7 +316,10 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
       } : null,
       distance: Number(distance.toFixed(3)), // Ensure distance is a number with 3 decimal places
       currentTime: time,
-      journeyId: 'daily_journey_' + new Date().toISOString().split('T')[0]
+      journeyId: `daily_journey_id_${new Date().toISOString().split('T')[0]}`,
+      preserveState: true, // Add this to indicate we want to preserve state
+      isTracking: isTracking,
+      isPaused: isPaused
     });
   };
 
@@ -266,8 +342,8 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
 
       <View style={styles.statsContainer}>
         <View style={styles.statBox}>
-          <Text style={styles.statLabel}>Distance</Text>
-          <Text style={styles.statValue}>{Number(distance.toFixed(3))} km</Text>
+          <Text style={styles.statLabel}>Current Session Distance</Text>
+          <Text style={styles.statValue}>{Number(distance || 0).toFixed(2)} km</Text>
         </View>
 
         <View style={styles.statBox}>

@@ -46,6 +46,14 @@ export const addLocationData = async (
       });
     }
 
+    // Update total distance for both day_tracking and shop_in events
+    if (locationData.distance && locationData.distance > 0) {
+      await journeyRef.update({
+        total_distance: firestore.FieldValue.increment(locationData.distance),
+        end_time: firestore.Timestamp.now()
+      });
+    }
+
     // Create a new location entry
     const timestamp = firestore.Timestamp.now();
     const locationId = `timestamp_${Date.now()}`;
@@ -65,7 +73,6 @@ export const addLocationData = async (
 
     // Only add distance fields if distance is provided
     if (typeof locationData.distance === 'number') {
-      updateData.total_distance = Number(locationData.distance.toFixed(3));
       updateData[`tracking_locations.${locationId}`].distance = Number(locationData.distance.toFixed(3));
     }
 
@@ -379,10 +386,11 @@ export const getTodaySummary = async (userId: string) => {
     
     // Get today's journey document
     const today = new Date().toISOString().split('T')[0];
-    const journeyRef = firestore().collection('daily_journeys').doc(`${userId}_daily_journey_id_${today}`);
-    const journeyDoc = await journeyRef.get();
+    const journeyId = `daily_journey_id_${today}`;  // Using consistent format
+    const journeyRef = firestore().collection('daily_journeys').doc(`${userId}_${journeyId}`);
     
     let totalDistance = 0;
+    const journeyDoc = await journeyRef.get();
     if (journeyDoc.exists) {
       const journeyData = journeyDoc.data();
       totalDistance = journeyData?.total_distance || 0;
@@ -391,7 +399,7 @@ export const getTodaySummary = async (userId: string) => {
     const summary = {
       totalOrders: orders.length,
       totalAmount: orders.reduce((sum, order) => sum + (order.total_amount || 0), 0),
-      totalDistance: Number(totalDistance.toFixed(3)), // Format to 3 decimal places
+      totalDistance: Number(totalDistance), 
       shopSummaries: {} as Record<string, {
         shopName: string;
         area: string;
@@ -436,7 +444,8 @@ export const getTodaySummary = async (userId: string) => {
       });
     });
 
-    console.log('Summary generated:', {
+    // Only log the simplified summary
+    const simplifiedSummary = {
       totalOrders: summary.totalOrders,
       totalAmount: summary.totalAmount,
       totalDistance: summary.totalDistance,
@@ -445,7 +454,9 @@ export const getTodaySummary = async (userId: string) => {
         name: shop.shopName,
         area: shop.area
       }))
-    });
+    };
+    
+    console.log('Summary:', simplifiedSummary);
 
     return summary;
   } catch (error) {

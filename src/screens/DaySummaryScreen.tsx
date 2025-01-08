@@ -85,8 +85,8 @@ const DaySummaryScreen = () => {
 
       <View style={styles.statsContainer}>
         <View style={[styles.statBox, styles.distanceBox]}>
-          <Text style={styles.statLabel}>Distance</Text>
-          <Text style={styles.statValue}>{summary?.totalDistance.toFixed(1)} km</Text>
+          <Text style={styles.statLabel}>Total Distance</Text>
+          <Text style={styles.statValue}>{summary?.totalDistance ? summary.totalDistance.toFixed(2) : '0.00'} km</Text>
         </View>
 
         <View style={[styles.statBox, styles.ordersBox]}>

@@ -21,6 +21,21 @@ import { addLocationData, getNearbyShops, Shop } from '../services/firestoreServ
 import type { RootStackParamList } from '../types/navigation';
 import type { Coordinates } from '../types/location';
 
+const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const earthRadius = 6371; // kilometers
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const lat1Rad = lat1 * Math.PI / 180;
+  const lat2Rad = lat2 * Math.PI / 180;
+
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1Rad) * Math.cos(lat2Rad);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = earthRadius * c;
+
+  return distance * 1000; // Convert to meters
+};
+
 const NearbyShopsScreen = () => {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const route = useRoute();
@@ -29,7 +44,28 @@ const NearbyShopsScreen = () => {
   const [loading, setLoading] = useState(true);
   const locationWatchId = useRef<number | null>(null);
   const firestoreInterval = useRef<number | null>(null);
-  const isTrackingRef = useRef(true);
+  const isTrackingRef = useRef(route.params?.isTracking ?? true);
+  const isPausedRef = useRef(route.params?.isPaused ?? false);
+  const lastLocation = useRef<GeoPosition | null>(null);
+
+  // Handle back navigation to preserve state
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (route.params?.preserveState) {
+        e.preventDefault();
+        navigation.navigate('Tracking', {
+          shouldResume: true,
+          preserveState: true,
+          initialTime: route.params.currentTime,
+          initialDistance: route.params.distance || 0,
+          isTracking: isTrackingRef.current,
+          isPaused: isPausedRef.current
+        });
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation]);
 
   // Single useEffect for all tracking functionality
   useEffect(() => {
@@ -41,6 +77,7 @@ const NearbyShopsScreen = () => {
       position => {
         if (isTrackingRef.current) {
           setCurrentLocation(position);
+          lastLocation.current = position;
           // Load shops when location updates
           loadNearbyShops({
             latitude: position.coords.latitude,
@@ -62,18 +99,35 @@ const NearbyShopsScreen = () => {
       try {
         if (!isTrackingRef.current || !currentLocation) return;
 
-        const currentUser = auth().currentUser;
-        if (!currentUser?.uid) return;
-
         const batteryLevel = await DeviceInfo.getBatteryLevel();
         
-        await addLocationData(currentUser.uid, route.params.journeyId, {
+        // Save location with distance for shop visits
+        const currentUser = auth().currentUser;
+        if (!currentUser) return;
+
+        // Calculate distance if we have previous location
+        let newDistance = 0;
+        if (lastLocation.current) {
+          const newDistanceMeters = calculateDistance(
+            lastLocation.current.coords.latitude,
+            lastLocation.current.coords.longitude,
+            currentLocation.coords.latitude,
+            currentLocation.coords.longitude
+          );
+          newDistance = newDistanceMeters / 1000; // Convert to kilometers
+        }
+
+        const today = new Date().toISOString().split('T')[0];
+        const journeyId = `daily_journey_id_${today}`;  // Using consistent format
+        
+        await addLocationData(currentUser.uid, journeyId, {
           latitude: currentLocation.coords.latitude,
           longitude: currentLocation.coords.longitude,
           accuracy: currentLocation.coords.accuracy || 0,
-          batteryLevel,
+          batteryLevel: batteryLevel,
           eventType: 'shop_in',
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          distance: newDistance
         });
       } catch (error) {
         console.error('Error updating Firestore:', error);
@@ -139,7 +193,11 @@ const NearbyShopsScreen = () => {
     // Navigate back with proper params to resume tracking
     navigation.navigate('Tracking', {
       shouldResume: true,
-      preserveState: true
+      preserveState: true,
+      initialTime: route.params.currentTime,
+      initialDistance: route.params.distance || 0,
+      isTracking: isTrackingRef.current,
+      isPaused: isPausedRef.current
     });
   };
 
