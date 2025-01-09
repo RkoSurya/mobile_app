@@ -8,6 +8,7 @@ import { addLocationData, calculateDistance } from '../services/firestoreService
 import { useNavigation, useRoute } from '@react-native-navigation/native';
 import { NavigationProp, RootStackParamList } from '../types/navigation';
 import { check, request, PERMISSIONS, RESULTS, openSettings } from 'react-native-permissions';
+import { AppState } from 'react-native';
 
 interface Location {
   latitude: number;
@@ -22,12 +23,13 @@ interface TrackingScreenProps {
 
 export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, route }) => {
   const { shouldResume = false, preserveState = false, initialTime = 0, initialDistance = 0 } = route.params || {};
-  
+
   // Store these values in refs to persist across re-renders and navigation
   const updateCountRef = useRef<number>(0);
   const lastMovementRef = useRef<string>('0m');
   const lastUpdateTimeRef = useRef<string>('Not updated yet');
-  
+  const appStateRef = useRef(AppState.currentState);
+
   const [isTracking, setIsTracking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
@@ -63,7 +65,18 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
 
   const requestAndroidPermission = async () => {
     try {
-      const granted = await PermissionsAndroid.request(
+      const backgroundPermission = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+        {
+          title: "Background Location Permission",
+          message: "App needs background location access for tracking when screen is off",
+          buttonNeutral: "Ask Me Later",
+          buttonNegative: "Cancel",
+          buttonPositive: "OK"
+        }
+      );
+
+      const fineLocationPermission = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         {
           title: "Location Permission",
@@ -73,11 +86,13 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
           buttonPositive: "OK"
         }
       );
-      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
-        console.log('Location permission granted');
+
+      if (backgroundPermission === PermissionsAndroid.RESULTS.GRANTED && 
+          fineLocationPermission === PermissionsAndroid.RESULTS.GRANTED) {
+        console.log('All location permissions granted');
         return true;
       } else {
-        console.log('Location permission denied');
+        console.log('Location permissions denied');
         return false;
       }
     } catch (err) {
@@ -105,7 +120,7 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
     if (!isPaused && isTracking) {
       // Start background timer
       BackgroundTimer.start();
-      
+
       // Use backgroundTimer.runBackgroundTimer for true background operation
       timerIntervalRef.current = BackgroundTimer.runBackgroundTimer(() => {
         setTime((prevTime: number) => prevTime + 1);
@@ -120,6 +135,28 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
     };
   }, [isTracking, isPaused]);
 
+  // Add AppState change listener
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      console.log('App State changed:', {
+        from: appStateRef.current,
+        to: nextAppState
+      });
+      
+      if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+        console.log('App has come to the foreground!');
+      } else if (appStateRef.current === 'active' && nextAppState.match(/inactive|background/)) {
+        console.log('App has gone to the background!');
+      }
+      
+      appStateRef.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
   // Location tracking effect
   useEffect(() => {
     const startLocationTracking = async () => {
@@ -130,6 +167,9 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
           return;
         }
 
+        // Start background timer for continuous tracking
+        BackgroundTimer.start();
+
         locationWatchIdRef.current = Geolocation.watchPosition(
           position => {
             const newLocation = {
@@ -137,22 +177,32 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
               longitude: position.coords.longitude,
               accuracy: position.coords.accuracy || 0
             };
-            
+
+            // Debug log for location update with app state
+            console.log('Received location update:', {
+              latitude: Number(newLocation.latitude.toFixed(7)),
+              longitude: Number(newLocation.longitude.toFixed(7)),
+              accuracy: newLocation.accuracy,
+              time: new Date().toISOString(),
+              isBackground: appStateRef.current !== 'active',
+              appState: appStateRef.current
+            });
+
             // Update refs and state
             const currentTime = new Date().toLocaleTimeString();
             lastUpdateTimeRef.current = currentTime;
             setLastUpdateTime(currentTime);
-            
+
             updateCountRef.current += 1;
             setUpdateCount(updateCountRef.current);
-            
+
             console.log('Location Updated:', {
-              latitude: newLocation.latitude,
-              longitude: newLocation.longitude,
+              latitude: Number(newLocation.latitude.toFixed(7)),
+              longitude: Number(newLocation.longitude.toFixed(7)),
               accuracy: newLocation.accuracy,
               time: new Date().toISOString()
             });
-            
+
             // Calculate distance if we have a previous location
             if (lastLocationRef.current) {
               const newDistanceMeters = calculateDistance(
@@ -161,41 +211,41 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
                 newLocation.latitude,
                 newLocation.longitude
               );
-              
+
               // Update movement indicator with ref
               const movementText = `${Math.round(newDistanceMeters)}m`;
               lastMovementRef.current = movementText;
               setLastMovement(movementText);
-              
+
               // Debug logs to verify tracking
               console.log('New Location:', {
-                latitude: newLocation.latitude,
-                longitude: newLocation.longitude,
+                latitude: Number(newLocation.latitude.toFixed(7)),
+                longitude: Number(newLocation.longitude.toFixed(7)),
                 accuracy: newLocation.accuracy,
                 movement: newDistanceMeters + 'm'
               });
-              
+
               // Update distance if accuracy is reasonable (50m) and movement is not unrealistic (500m)
               if (newLocation.accuracy < 50 && newDistanceMeters < 500) {
                 const newDistance = (newDistanceMeters / 1000); // Convert to kilometers
                 setDistance(async prev => {
                   const updatedDistance = prev + newDistance;
-                  
+
                   // Save the updated distance to Firestore
                   const today = new Date().toISOString().split('T')[0];
-                  const journeyId = `daily_journey_id_${today}`;  
-                  
+                  const journeyId = `daily_journey_id_${today}`;
+
                   // Save location with distance
                   addLocationData(currentUser.uid, journeyId, {
-                    latitude: newLocation.latitude,
-                    longitude: newLocation.longitude,
+                    latitude: Number(newLocation.latitude.toFixed(7)),
+                    longitude: Number(newLocation.longitude.toFixed(7)),
                     accuracy: newLocation.accuracy,
                     batteryLevel: await DeviceInfo.getBatteryLevel(),
                     eventType: 'day_tracking',
                     timestamp: new Date().toISOString(),
                     distance: newDistance
                   });
-                  
+
                   return Number(updatedDistance.toFixed(3)); // Keep 3 decimal places
                 });
               }
@@ -207,10 +257,15 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
           },
           error => console.error('Error watching position:', error),
           {
-            enableHighAccuracy: false, // Set to false as requested
-            distanceFilter: 10, // Only update if moved by 10 meters
-            interval: 60000, // Update every minute
-            fastestInterval: 30000 // Fastest update interval of 30 seconds
+            enableHighAccuracy: false,
+            distanceFilter: 1, // Update when moved at least 1 meter
+            interval: 2000, // Update every 2 seconds
+            fastestInterval: 1000, // Fastest update interval of 1 second
+            maximumAge: 1000, // Only use locations that are at most 1 second old
+            timeout: 20000, // Allow up to 20 seconds to get a GPS fix
+            forceRequestLocation: true, // Force location request even in background
+            showLocationDialog: true, // Show system location dialog if needed
+            useSignificantChanges: true // Use significant changes to save battery
           }
         );
       } catch (error) {
@@ -236,15 +291,15 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
       const updateFirestore = async () => {
         try {
           const batteryLevel = await DeviceInfo.getBatteryLevel();
-          
+
           await addLocationData(currentUser.uid, `daily_journey_id_${new Date().toISOString().split('T')[0]}`, {
-            latitude: currentLocation.latitude,
-            longitude: currentLocation.longitude,
+            latitude: Number(currentLocation.latitude.toFixed(7)),
+            longitude: Number(currentLocation.longitude.toFixed(7)),
             accuracy: currentLocation.accuracy,
             batteryLevel,
             eventType: 'day_tracking',
             timestamp: new Date().toISOString(),
-            distance: Number(distance.toFixed(3)) // Ensure distance is a number with 3 decimal places
+            distance: Number(distance.toFixed(5)) // Ensure distance is a number with 3 decimal places
           });
         } catch (error) {
           console.error('Error updating Firestore:', error);
@@ -335,7 +390,7 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
       {currentLocation && (
         <View style={styles.locationContainer}>
           <Text style={styles.locationText}>
-            {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
+            {currentLocation.latitude.toFixed(7)}, {currentLocation.longitude.toFixed(7)}
           </Text>
         </View>
       )}
@@ -343,7 +398,7 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
       <View style={styles.statsContainer}>
         <View style={styles.statBox}>
           <Text style={styles.statLabel}>Current Session Distance</Text>
-          <Text style={styles.statValue}>{Number(distance || 0).toFixed(2)} km</Text>
+          <Text style={styles.statValue}>{Number(distance || 0).toFixed(4)} km</Text>
         </View>
 
         <View style={styles.statBox}>
@@ -356,20 +411,20 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
         <Text style={styles.locationLabel}>Current Location:</Text>
         <Text style={styles.coordinates}>
           {currentLocation ? 
-            `${currentLocation.latitude.toFixed(6)}, ${currentLocation.longitude.toFixed(6)}` 
+            `${currentLocation.latitude.toFixed(7)}, ${currentLocation.longitude.toFixed(7)}` 
             : 'Waiting for location...'}
         </Text>
       </View>
 
       <View style={styles.buttonContainer}>
-        <TouchableOpacity 
-          style={[styles.button, styles.shopButton]} 
+        <TouchableOpacity
+          style={[styles.button, styles.shopButton]}
           onPress={handleShopReached}>
           <Text style={styles.buttonText}>Shop Reached</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={[styles.button, styles.endButton]} 
+        <TouchableOpacity
+          style={[styles.button, styles.endButton]}
           onPress={handleEndDayOnTracking}>
           <Text style={styles.buttonText}>End Day</Text>
         </TouchableOpacity>

@@ -27,7 +27,7 @@ const LoginScreen = () => {
   const [name, setName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(true); 
   const navigation = useNavigation<NavigationProp>();
 
   const handleAuth = () => {
@@ -38,33 +38,43 @@ const LoginScreen = () => {
     }
     
     if (isSignUp) {
+      if (!name.trim()) {
+        Alert.alert('Error', 'Please enter your name.');
+        return;
+      }
+      if (!phoneNumber.trim()) {
+        Alert.alert('Error', 'Please enter your phone number.');
+        return;
+      }
+      if (password.length < 6) {
+        Alert.alert('Error', 'Password must be at least 6 characters.');
+        return;
+      }
       if (password !== confirmPassword) {
         Alert.alert('Error', 'Passwords do not match!');
         return;
       }
-      // Sign up logic
+      
       auth().createUserWithEmailAndPassword(email, password)
         .then((userCredential) => {
           const user = userCredential.user;
-          Alert.alert('Success', 'User signed up successfully!');
-          // Add user data to Firestore
           const userData = {
             name: name,
             email: email,
             phoneNumber: phoneNumber,
           };
           addUserToFirestore(userData);
-          navigation.replace('Login');
+          Alert.alert('Success', 'Account created successfully!', [
+            { text: 'OK', onPress: () => navigation.replace('Login') }
+          ]);
         })
         .catch((error) => {
           Alert.alert('Error', error.message);
         });
     } else {
-      // Sign in logic
       auth().signInWithEmailAndPassword(email, password)
         .then((userCredential) => {
           const user = userCredential.user;
-          Alert.alert('Success', 'User signed in successfully!');
           navigation.replace('Home');
         })
         .catch((error) => {
@@ -78,26 +88,31 @@ const LoginScreen = () => {
       <View style={styles.content}>
         <Text style={styles.title}>{isSignUp ? 'Sign Up' : 'Sign In'}</Text>
         {isSignUp && (
-          <TextInput
-            placeholder="Name"
-            value={name}
-            onChangeText={setName}
-            style={styles.input}
-          />
-        )}
-        {isSignUp && (
-          <TextInput
-            placeholder="Phone Number"
-            value={phoneNumber}
-            onChangeText={setPhoneNumber}
-            style={styles.input}
-          />
+          <>
+            <TextInput
+              placeholder="Name"
+              value={name}
+              onChangeText={setName}
+              style={styles.input}
+              placeholderTextColor="#666"
+            />
+            <TextInput
+              placeholder="Phone Number"
+              value={phoneNumber}
+              onChangeText={setPhoneNumber}
+              style={styles.input}
+              keyboardType="phone-pad"
+              placeholderTextColor="#666"
+            />
+          </>
         )}
         <TextInput
           style={styles.input}
           placeholder="Email"
           value={email}
           onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
           placeholderTextColor="#666"
         />
         <TextInput
@@ -115,6 +130,7 @@ const LoginScreen = () => {
             onChangeText={setConfirmPassword}
             secureTextEntry
             style={styles.input}
+            placeholderTextColor="#666"
           />
         )}
         <TouchableOpacity style={styles.loginButton} onPress={handleAuth}>

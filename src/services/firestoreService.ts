@@ -44,6 +44,48 @@ export const addLocationData = async (
         total_distance: 0,
         tracking_locations: {}
       });
+      // First location should always be added
+      const firstLocationId = `timestamp_${Date.now()}`;
+      await journeyRef.update({
+        end_time: now,
+        [`tracking_locations.${firstLocationId}`]: {
+          latitude: Number(locationData.latitude.toFixed(7)),
+          longitude: Number(locationData.longitude.toFixed(7)),
+          timestamp: now,
+          accuracy: Number(locationData.accuracy.toFixed(2)),
+          battery_level: locationData.batteryLevel,
+          event_type: locationData.eventType,
+          distance: locationData.distance ? Number(locationData.distance.toFixed(3)) : 0
+        }
+      });
+      console.log('First location data added successfully');
+      return;
+    }
+
+    // Get the latest location entry
+    const journeyData = journeyDoc.data();
+    const trackingLocations = journeyData?.tracking_locations || {};
+    const locationEntries = Object.entries(trackingLocations);
+    
+    if (locationEntries.length > 0) {
+      // Sort by timestamp to get the latest entry
+      const [_, lastLocation] = locationEntries
+        .sort(([a], [b]) => parseInt(b.split('_')[1]) - parseInt(a.split('_')[1]))[0];
+      
+      // Format new coordinates
+      const newLatString = Number(locationData.latitude.toFixed(7)).toFixed(7);
+      const newLngString = Number(locationData.longitude.toFixed(7)).toFixed(7);
+      
+      // Use string comparison for exact precision
+      const lastLatString = lastLocation.latitude_string || Number(lastLocation.latitude.toFixed(7)).toFixed(7);
+      const lastLngString = lastLocation.longitude_string || Number(lastLocation.longitude.toFixed(7)).toFixed(7);
+      
+    
+      
+      if (lastLatString === newLatString && lastLngString === newLngString) {
+        console.log('Location unchanged, skipping update');
+        return;
+      }
     }
 
     // Update total distance for both day_tracking and shop_in events
@@ -58,12 +100,18 @@ export const addLocationData = async (
     const timestamp = firestore.Timestamp.now();
     const locationId = `timestamp_${Date.now()}`;
 
+    // Format coordinates with consistent precision
+    const formattedLat = Number(locationData.latitude.toFixed(7));
+    const formattedLng = Number(locationData.longitude.toFixed(7));
+
     // Prepare the update data
     const updateData: any = {
       end_time: timestamp,
       [`tracking_locations.${locationId}`]: {
-        latitude: Number(locationData.latitude.toFixed(6)),
-        longitude: Number(locationData.longitude.toFixed(6)),
+        latitude: formattedLat,
+        longitude: formattedLng,
+        latitude_string: formattedLat.toFixed(7),  // Store as string to preserve exact precision
+        longitude_string: formattedLng.toFixed(7), // Store as string to preserve exact precision
         timestamp: timestamp,
         accuracy: Number(locationData.accuracy.toFixed(2)),
         battery_level: locationData.batteryLevel,
