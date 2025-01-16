@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, PermissionsAndroid } from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
 import BackgroundTimer from 'react-native-background-timer';
@@ -9,6 +9,7 @@ import { useNavigation, useRoute } from '@react-native-navigation/native';
 import { NavigationProp, RootStackParamList } from '../types/navigation';
 import { check, request, PERMISSIONS, RESULTS, openSettings } from 'react-native-permissions';
 import { AppState } from 'react-native';
+import WebView from 'react-native-webview';
 
 interface Location {
   latitude: number;
@@ -35,6 +36,7 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
   const [locationHistory, setLocationHistory] = useState<Location[]>([]);
   const [distance, setDistance] = useState<number>(initialDistance);
+  const distanceRef = useRef<number>(initialDistance);
   const [time, setTime] = useState(initialTime);
   const [lastUpdateTime, setLastUpdateTime] = useState<string>(lastUpdateTimeRef.current);
   const [lastMovement, setLastMovement] = useState<string>(lastMovementRef.current);
@@ -45,6 +47,43 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
   const lastLocationRef = useRef<Location | null>(null);
   const currentUser = auth().currentUser;
   const todayRef = useRef(new Date().toISOString().split('T')[0]);
+  const webViewRef = useRef(null);
+
+  const [totalDistance, setTotalDistance] = useState<number>(0);
+  const [lastLocation, setLastLocation] = useState<Location | null>(null);
+  const [segmentDistances, setSegmentDistances] = useState<Array<{distance: number, timestamp: string}>>([]);
+
+  useEffect(() => {
+    distanceRef.current = distance;
+    console.log('Distance state updated:', {
+      newDistance: distance,
+      ref: distanceRef.current
+    });
+  }, [distance]);
+
+  const updateMapLocation = useCallback((latitude: number, longitude: number) => {
+    if (webViewRef.current) {
+      const script = `
+        if (typeof map !== 'undefined') {
+          map.setView([${latitude}, ${longitude}], 15);
+          map.eachLayer((layer) => {
+            if (layer instanceof L.Marker) {
+              map.removeLayer(layer);
+            }
+          });
+          L.marker([${latitude}, ${longitude}]).addTo(map);
+        }
+        true;
+      `;
+      webViewRef.current.injectJavaScript(script);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentLocation) {
+      updateMapLocation(currentLocation.latitude, currentLocation.longitude);
+    }
+  }, [currentLocation, updateMapLocation]);
 
   // Reset tracking if it's a new day
   useEffect(() => {
@@ -65,17 +104,7 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
 
   const requestAndroidPermission = async () => {
     try {
-      const backgroundPermission = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
-        {
-          title: "Background Location Permission",
-          message: "App needs background location access for tracking when screen is off",
-          buttonNeutral: "Ask Me Later",
-          buttonNegative: "Cancel",
-          buttonPositive: "OK"
-        }
-      );
-
+      // First request fine location permission
       const fineLocationPermission = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         {
@@ -87,12 +116,28 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
         }
       );
 
-      if (backgroundPermission === PermissionsAndroid.RESULTS.GRANTED && 
-          fineLocationPermission === PermissionsAndroid.RESULTS.GRANTED) {
+      if (fineLocationPermission !== PermissionsAndroid.RESULTS.GRANTED) {
+        console.log('Fine location permission denied');
+        return false;
+      }
+
+      // Then request background location permission
+      const backgroundPermission = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+        {
+          title: "Background Location Permission",
+          message: "Please select 'Allow all the time' in the next screen to enable background location tracking even when the app is closed.",
+          buttonNeutral: "Ask Me Later",
+          buttonNegative: "Cancel",
+          buttonPositive: "OK"
+        }
+      );
+
+      if (backgroundPermission === PermissionsAndroid.RESULTS.GRANTED) {
         console.log('All location permissions granted');
         return true;
       } else {
-        console.log('Location permissions denied');
+        console.log('Background location permission denied');
         return false;
       }
     } catch (err) {
@@ -171,101 +216,26 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
         BackgroundTimer.start();
 
         locationWatchIdRef.current = Geolocation.watchPosition(
-          position => {
+          async position => {
             const newLocation = {
               latitude: position.coords.latitude,
               longitude: position.coords.longitude,
-              accuracy: position.coords.accuracy || 0
+              accuracy: position.coords.accuracy,
+              timestamp: position.timestamp
             };
-
-            // Debug log for location update with app state
-            console.log('Received location update:', {
-              latitude: Number(newLocation.latitude.toFixed(7)),
-              longitude: Number(newLocation.longitude.toFixed(7)),
-              accuracy: newLocation.accuracy,
-              time: new Date().toISOString(),
-              isBackground: appStateRef.current !== 'active',
-              appState: appStateRef.current
-            });
-
-            // Update refs and state
-            const currentTime = new Date().toLocaleTimeString();
-            lastUpdateTimeRef.current = currentTime;
-            setLastUpdateTime(currentTime);
-
-            updateCountRef.current += 1;
-            setUpdateCount(updateCountRef.current);
-
-            console.log('Location Updated:', {
-              latitude: Number(newLocation.latitude.toFixed(7)),
-              longitude: Number(newLocation.longitude.toFixed(7)),
-              accuracy: newLocation.accuracy,
-              time: new Date().toISOString()
-            });
-
-            // Calculate distance if we have a previous location
-            if (lastLocationRef.current) {
-              const newDistanceMeters = calculateDistance(
-                lastLocationRef.current.latitude,
-                lastLocationRef.current.longitude,
-                newLocation.latitude,
-                newLocation.longitude
-              );
-
-              // Update movement indicator with ref
-              const movementText = `${Math.round(newDistanceMeters)}m`;
-              lastMovementRef.current = movementText;
-              setLastMovement(movementText);
-
-              // Debug logs to verify tracking
-              console.log('New Location:', {
-                latitude: Number(newLocation.latitude.toFixed(7)),
-                longitude: Number(newLocation.longitude.toFixed(7)),
-                accuracy: newLocation.accuracy,
-                movement: newDistanceMeters + 'm'
-              });
-
-              // Update distance if accuracy is reasonable (50m) and movement is not unrealistic (500m)
-              if (newLocation.accuracy < 50 && newDistanceMeters < 500) {
-                const newDistance = (newDistanceMeters / 1000); // Convert to kilometers
-                setDistance(async prev => {
-                  const updatedDistance = prev + newDistance;
-
-                  // Save the updated distance to Firestore
-                  const today = new Date().toISOString().split('T')[0];
-                  const journeyId = `daily_journey_id_${today}`;
-
-                  // Save location with distance
-                  addLocationData(currentUser.uid, journeyId, {
-                    latitude: Number(newLocation.latitude.toFixed(7)),
-                    longitude: Number(newLocation.longitude.toFixed(7)),
-                    accuracy: newLocation.accuracy,
-                    batteryLevel: await DeviceInfo.getBatteryLevel(),
-                    eventType: 'day_tracking',
-                    timestamp: new Date().toISOString(),
-                    distance: newDistance
-                  });
-
-                  return Number(updatedDistance.toFixed(3)); // Keep 3 decimal places
-                });
-              }
-            }
-
-            lastLocationRef.current = newLocation;
-            setCurrentLocation(newLocation);
-            setLocationHistory(prev => [...prev, newLocation]);
+            await handleLocationUpdate(newLocation);
           },
           error => console.error('Error watching position:', error),
           {
-            enableHighAccuracy: false,
-            distanceFilter: 1, // Update when moved at least 1 meter
-            interval: 2000, // Update every 2 seconds
-            fastestInterval: 1000, // Fastest update interval of 1 second
-            maximumAge: 1000, // Only use locations that are at most 1 second old
-            timeout: 20000, // Allow up to 20 seconds to get a GPS fix
-            forceRequestLocation: true, // Force location request even in background
-            showLocationDialog: true, // Show system location dialog if needed
-            useSignificantChanges: true // Use significant changes to save battery
+            enableHighAccuracy: true,
+            distanceFilter: 1,
+            interval: 1000,
+            fastestInterval: 500,
+            maximumAge: 500,
+            timeout: 20000,
+            forceRequestLocation: true,
+            showLocationDialog: true,
+            useSignificantChanges: false
           }
         );
       } catch (error) {
@@ -343,6 +313,88 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
     };
   }, [navigation, isPaused]);
 
+  const calculateDistance = (prevLocation: Location | null, newLocation: Location): number => {
+    if (!prevLocation) return 0;
+    
+    // Convert latitude and longitude from degrees to radians
+    const lat1 = prevLocation.latitude * Math.PI / 180;
+    const lon1 = prevLocation.longitude * Math.PI / 180;
+    const lat2 = newLocation.latitude * Math.PI / 180;
+    const lon2 = newLocation.longitude * Math.PI / 180;
+
+    // Haversine formula
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = lat2 - lat1;
+    const dLon = lon2 - lon1;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1) * Math.cos(lat2) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c; // Distance in kilometers
+
+    console.log('Distance calculation:', {
+      prevLat: prevLocation.latitude,
+      prevLon: prevLocation.longitude,
+      newLat: newLocation.latitude,
+      newLon: newLocation.longitude,
+      calculatedDistance: distance
+    });
+
+    return distance;
+  };
+
+  const handleLocationUpdate = async (newLocation: Location) => {
+    try {
+      console.log('New location received:', {
+        lat: newLocation.latitude,
+        lon: newLocation.longitude,
+        accuracy: newLocation.accuracy
+      });
+
+      // Only process location if accuracy is good enough
+      if (newLocation.accuracy && newLocation.accuracy <= 20) {
+        const prevLocation = locationHistory.length > 0 ? locationHistory[locationHistory.length - 1] : null;
+        const newDistance = calculateDistance(prevLocation, newLocation);
+        
+        // Log the location update to Firebase
+        await addLocationData(currentUser.uid, `daily_journey_id_${new Date().toISOString().split('T')[0]}`, {
+          latitude: newLocation.latitude,
+          longitude: newLocation.longitude,
+          accuracy: newLocation.accuracy,
+          batteryLevel: await DeviceInfo.getBatteryLevel(),
+          eventType: 'day_tracking',
+          timestamp: new Date().toISOString(),
+          distance: newDistance
+        });
+
+        setLocationHistory(prev => [...prev, newLocation]);
+        setCurrentLocation(newLocation);
+        
+        // Only update distance if it's a reasonable value
+        if (newDistance >= 0 && newDistance < 1) {
+          setDistance(prev => {
+            const updated = prev + newDistance;
+            console.log('Distance updated:', {
+              previous: prev,
+              added: newDistance,
+              new: updated
+            });
+            return updated;
+          });
+        } else {
+          console.log('Skipping unrealistic distance:', newDistance);
+        }
+        
+        setLastMovement(new Date().toISOString());
+      } else {
+        console.log('Location accuracy not good enough:', newLocation.accuracy);
+      }
+    } catch (error) {
+      console.error('Error handling location update:', error);
+    }
+  };
+
   const handleEndDayOnTracking = async () => {
     setIsTracking(false);
     setIsPaused(true);
@@ -398,13 +450,66 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
       <View style={styles.statsContainer}>
         <View style={styles.statBox}>
           <Text style={styles.statLabel}>Current Session Distance</Text>
-          <Text style={styles.statValue}>{Number(distance || 0).toFixed(4)} km</Text>
+          <Text style={styles.statValue}>{Number(distance || 0).toFixed(5)} km</Text>
         </View>
 
         <View style={styles.statBox}>
           <Text style={styles.statLabel}>Time</Text>
           <Text style={styles.statValue}>{time}s</Text>
         </View>
+      </View>
+
+      <View style={styles.mapContainer}>
+        <WebView
+          ref={webViewRef}
+          style={styles.map}
+          source={{
+            html: `
+              <!DOCTYPE html>
+              <html>
+                <head>
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+                  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+                  <style>
+                    body { margin: 0; padding: 0; }
+                    #map { height: 100vh; width: 100vw; }
+                  </style>
+                </head>
+                <body>
+                  <div id="map"></div>
+                  <script>
+                    var map = L.map('map', {
+                      zoomControl: true,
+                      attributionControl: false
+                    }).setView([${currentLocation?.latitude || 11.9074125}, ${currentLocation?.longitude || 79.3076478}], 15);
+                    
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                      maxZoom: 19
+                    }).addTo(map);
+
+                    if (${currentLocation ? 'true' : 'false'}) {
+                      L.marker([${currentLocation?.latitude || 11.9074125}, ${currentLocation?.longitude || 79.3076478}]).addTo(map);
+                    }
+                  </script>
+                </body>
+              </html>
+            `
+          }}
+          onError={(syntheticEvent) => {
+            const { nativeEvent } = syntheticEvent;
+            console.warn('WebView error: ', nativeEvent);
+          }}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          startInLoadingState={true}
+          scalesPageToFit={true}
+          onLoad={() => {
+            if (currentLocation) {
+              updateMapLocation(currentLocation.latitude, currentLocation.longitude);
+            }
+          }}
+        />
       </View>
 
       <View style={styles.locationInfo}>
@@ -437,7 +542,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    padding: 20
   },
   header: {
     flexDirection: 'row',
@@ -515,6 +619,46 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontSize: 18,
+    fontWeight: '600'
+  },
+  mapContainer: {
+    height: 300,
+    width: '100%',
+    backgroundColor: '#fff',
+    marginVertical: 16,
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.41,
+  },
+  map: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
+  },
+  mapLoading: {
+    height: 300,
+    width: '100%',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  resetButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    backgroundColor: '#007AFF',
+    marginTop: 10
+  },
+  resetButtonText: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: '600'
   }
 });

@@ -138,4 +138,7 @@ dependencies {
 
     // Add these dependencies for background geolocation
     implementation "com.google.android.gms:play-services-location:21.0.1"
+    implementation "com.google.android.gms:play-services-base:18.0.1"
+    implementation "com.google.android.gms:play-services-maps:18.0.2"
+    implementation "org.osmdroid:osmdroid-android:6.1.13"
 }
