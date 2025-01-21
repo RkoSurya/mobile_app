@@ -21,7 +21,8 @@ export const calculateHaversineDistance = (
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const distance = R * c * 1000; // Convert to meters
 
-  return distance;
+  // Round to 2 decimal places
+  return Math.round(distance * 100) / 100;
 };
 
 export const updateDistanceInLocation = (
@@ -36,10 +37,17 @@ export const updateDistanceInLocation = (
 ): number => {
   if (!previousLocation) return 0;
 
-  return calculateHaversineDistance(
+  const distance = calculateHaversineDistance(
     previousLocation.latitude,
     previousLocation.longitude,
     currentLocation.latitude,
     currentLocation.longitude
   );
+
+  // Only count distances greater than 2 meters to filter out GPS noise
+  // but less than 100 meters to filter out potential GPS jumps
+  if (distance > 2 && distance < 100) {
+    return distance;
+  }
+  return 0;
 };

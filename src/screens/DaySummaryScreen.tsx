@@ -10,6 +10,11 @@ interface ShopSummary {
   area: string;
   orderCount: number;
   totalAmount: number;
+  subtotal: number;
+  gstAmount: number;
+  gstPercentage: number;
+  discountAmount: number;
+  discountPercentage: number;
   products: Record<string, {
     quantity: number;
     uom: string;
@@ -21,6 +26,8 @@ interface Summary {
   totalOrders: number;
   totalAmount: number;
   totalDistance: number;
+  totalGstAmount: number;
+  totalDiscountAmount: number;
   shopSummaries: Record<string, ShopSummary>;
 }
 
@@ -51,6 +58,9 @@ const DaySummaryScreen = () => {
   };
 
   const handleShopPress = (shopName: string, area: string, products: Record<string, { quantity: number; uom: string; amount: number }>) => {
+    const shopSummary = Object.values(summary?.shopSummaries || {}).find(s => s.shopName === shopName);
+    if (!shopSummary) return;
+
     const ordersList = Object.entries(products).map(([product_name, details]) => ({
       product_name,
       ...details
@@ -60,9 +70,12 @@ const DaySummaryScreen = () => {
       shopName,
       area,
       orders: ordersList,
-      totalAmount: summary?.shopSummaries[Object.keys(summary.shopSummaries).find(key => 
-        summary.shopSummaries[key].shopName === shopName
-      ) || '']?.totalAmount || 0
+      totalAmount: shopSummary.totalAmount,
+      subtotal: shopSummary.subtotal,
+      gstAmount: shopSummary.gstAmount,
+      gstPercentage: shopSummary.gstPercentage,
+      discountAmount: shopSummary.discountAmount,
+      discountPercentage: shopSummary.discountPercentage
     });
   };
 
@@ -101,6 +114,12 @@ const DaySummaryScreen = () => {
       <View style={[styles.statBox, styles.amountBox]}>
         <Text style={styles.statLabel}>Total Amount</Text>
         <Text style={styles.statValue}>₹{summary?.totalAmount || 0}</Text>
+        {summary?.totalDiscountAmount > 0 && (
+          <Text style={styles.statDetail}>Discount: -₹{summary.totalDiscountAmount}</Text>
+        )}
+        {summary?.totalGstAmount > 0 && (
+          <Text style={styles.statDetail}>GST: +₹{summary.totalGstAmount}</Text>
+        )}
       </View>
 
       <Text style={styles.sectionTitle}>Order History</Text>
@@ -114,8 +133,23 @@ const DaySummaryScreen = () => {
           <View style={styles.shopInfo}>
             <Text style={styles.shopName}>{shop.shopName}</Text>
             <Text style={styles.shopArea}>{shop.area}</Text>
+            <View style={styles.shopDetails}>
+              {shop.discountAmount > 0 && (
+                <Text style={styles.detailText}>
+                  Discount ({shop.discountPercentage}%): -₹{shop.discountAmount}
+                </Text>
+              )}
+              {shop.gstAmount > 0 && (
+                <Text style={styles.detailText}>
+                  GST ({shop.gstPercentage}%): +₹{shop.gstAmount}
+                </Text>
+              )}
+            </View>
           </View>
-          <Text style={styles.shopAmount}>₹{shop.totalAmount}</Text>
+          <View style={styles.amountContainer}>
+            <Text style={styles.shopAmount}>₹{shop.totalAmount}</Text>
+            <Text style={styles.subtotalText}>Subtotal: ₹{shop.subtotal}</Text>
+          </View>
         </TouchableOpacity>
       ))}
     </ScrollView>
@@ -228,6 +262,26 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#34C759',
+  },
+  shopDetails: {
+    marginTop: 4,
+  },
+  detailText: {
+    fontSize: 12,
+    color: '#666',
+  },
+  statDetail: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+  },
+  amountContainer: {
+    alignItems: 'flex-end',
+  },
+  subtotalText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
   },
 });
 

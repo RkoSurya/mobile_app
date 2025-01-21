@@ -339,6 +339,11 @@ export interface Order {
   user_id: string;
   user_email: string;
   line_items: LineItem[];
+  subtotal: number;
+  gst_percentage: number;
+  gst_amount: number;
+  discount_percentage: number;
+  discount_amount: number;
   total_amount: number;
   payment_method: 'cash' | 'online' | 'credit';
   created_at: FirebaseFirestoreTypes.Timestamp;
@@ -447,12 +452,19 @@ export const getTodaySummary = async (userId: string) => {
     const summary = {
       totalOrders: orders.length,
       totalAmount: orders.reduce((sum, order) => sum + (order.total_amount || 0), 0),
-      totalDistance: Number(totalDistance), 
+      totalDistance: Number(totalDistance),
+      totalGstAmount: orders.reduce((sum, order) => sum + (order.gst_amount || 0), 0),
+      totalDiscountAmount: orders.reduce((sum, order) => sum + (order.discount_amount || 0), 0),
       shopSummaries: {} as Record<string, {
         shopName: string;
         area: string;
         orderCount: number;
         totalAmount: number;
+        subtotal: number;
+        gstAmount: number;
+        gstPercentage: number;
+        discountAmount: number;
+        discountPercentage: number;
         products: Record<string, {
           quantity: number;
           uom: string;
@@ -469,6 +481,11 @@ export const getTodaySummary = async (userId: string) => {
           area: order.shop_area || '',
           orderCount: 0,
           totalAmount: 0,
+          subtotal: 0,
+          gstAmount: 0,
+          gstPercentage: 0,
+          discountAmount: 0,
+          discountPercentage: 0,
           products: {}
         };
       }
@@ -476,6 +493,13 @@ export const getTodaySummary = async (userId: string) => {
       const shopSummary = summary.shopSummaries[order.shop_id];
       shopSummary.orderCount++;
       shopSummary.totalAmount += order.total_amount || 0;
+      shopSummary.subtotal += order.subtotal || 0;
+      shopSummary.gstAmount += order.gst_amount || 0;
+      shopSummary.discountAmount += order.discount_amount || 0;
+      
+      // Update percentages (using the latest order's percentages)
+      shopSummary.gstPercentage = order.gst_percentage || 0;
+      shopSummary.discountPercentage = order.discount_percentage || 0;
 
       // Aggregate products
       order.line_items?.forEach(item => {
@@ -497,6 +521,8 @@ export const getTodaySummary = async (userId: string) => {
       totalOrders: summary.totalOrders,
       totalAmount: summary.totalAmount,
       totalDistance: summary.totalDistance,
+      totalGstAmount: summary.totalGstAmount,
+      totalDiscountAmount: summary.totalDiscountAmount,
       shopCount: Object.keys(summary.shopSummaries).length,
       shops: Object.values(summary.shopSummaries).map(shop => ({
         name: shop.shopName,

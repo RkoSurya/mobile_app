@@ -445,7 +445,6 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
     
     // Update last movement info
     const now = new Date();
-    setLastUpdateTime(now.toLocaleTimeString());
     updateCountRef.current += 1;
     setUpdateCount(updateCountRef.current);
   };
@@ -529,12 +528,6 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
         <Text style={styles.title}>Tracking</Text>
         <Text style={[styles.status, { color: isTracking ? '#00C851' : '#666' }]}>
           {isTracking ? 'Active' : 'Inactive'}
-        </Text>
-      </View>
-
-      <View style={styles.statusContainer}>
-        <Text style={styles.statusText}>
-          Last update at: {lastUpdateTime}
         </Text>
       </View>
 

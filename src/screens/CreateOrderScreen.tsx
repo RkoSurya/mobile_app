@@ -38,6 +38,8 @@ const CreateOrderScreen = () => {
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'online' | 'credit'>('cash');
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'completed' | 'failed'>('pending');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [gstPercentage, setGstPercentage] = useState<number>(0);
+  const [discountPercentage, setDiscountPercentage] = useState<number>(0);
 
   // UOM options
   const uomOptions = [
@@ -125,7 +127,11 @@ const CreateOrderScreen = () => {
   };
 
   const calculateTotal = () => {
-    return lineItems.reduce((sum, item) => sum + item.amount, 0);
+    const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
+    const discountAmount = (subtotal * discountPercentage) / 100;
+    const afterDiscount = subtotal - discountAmount;
+    const gstAmount = (afterDiscount * gstPercentage) / 100;
+    return afterDiscount + gstAmount;
   };
 
   const handleCreateOrder = async () => {
@@ -141,6 +147,11 @@ const CreateOrderScreen = () => {
         return;
       }
 
+      const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
+      const discountAmount = (subtotal * discountPercentage) / 100;
+      const afterDiscount = subtotal - discountAmount;
+      const gstAmount = (afterDiscount * gstPercentage) / 100;
+
       const orderData = {
         shop_id: route.params.shop.id,
         shop_name: route.params.shop.name,
@@ -148,6 +159,11 @@ const CreateOrderScreen = () => {
         user_id: currentUser.uid,
         user_email: currentUser.email || '',
         line_items: lineItems,
+        subtotal: subtotal,
+        discount_percentage: discountPercentage,
+        discount_amount: discountAmount,
+        gst_percentage: gstPercentage,
+        gst_amount: gstAmount,
         total_amount: calculateTotal(),
         payment_method: paymentMethod,
       };
@@ -242,6 +258,53 @@ const CreateOrderScreen = () => {
         </View>
 
         {lineItems.length > 0 && (
+          <View style={styles.summaryContainer}>
+            <View style={styles.row}>
+              <View style={[styles.inputContainer, { flex: 1 }]}>
+                <Text style={styles.label}>GST %</Text>
+                <TextInput
+                  style={styles.input}
+                  value={gstPercentage.toString()}
+                  onChangeText={(text) => setGstPercentage(parseFloat(text) || 0)}
+                  keyboardType="numeric"
+                  placeholder="Enter GST percentage"
+                />
+              </View>
+              <View style={[styles.inputContainer, { flex: 1 }]}>
+                <Text style={styles.label}>Discount %</Text>
+                <TextInput
+                  style={styles.input}
+                  value={discountPercentage.toString()}
+                  onChangeText={(text) => setDiscountPercentage(parseFloat(text) || 0)}
+                  keyboardType="numeric"
+                  placeholder="Enter discount percentage"
+                />
+              </View>
+            </View>
+            
+            <View style={styles.totalContainer}>
+              <Text style={styles.totalLabel}>Subtotal:</Text>
+              <Text style={styles.totalAmount}>₹{lineItems.reduce((sum, item) => sum + item.amount, 0).toFixed(2)}</Text>
+            </View>
+            {discountPercentage > 0 && (
+              <View style={styles.totalContainer}>
+                <Text style={styles.totalLabel}>Discount ({discountPercentage}%):</Text>
+                <Text style={styles.totalAmount}>-₹{((lineItems.reduce((sum, item) => sum + item.amount, 0) * discountPercentage) / 100).toFixed(2)}</Text>
+              </View>
+            )}
+            {gstPercentage > 0 && (
+              <View style={styles.totalContainer}>
+                <Text style={styles.totalLabel}>GST ({gstPercentage}%):</Text>
+                <Text style={styles.totalAmount}>₹{((lineItems.reduce((sum, item) => sum + item.amount, 0) * (1 - discountPercentage / 100) * gstPercentage) / 100).toFixed(2)}</Text>
+              </View>
+            )}
+            <View style={[styles.totalContainer, styles.finalTotal]}>
+              <Text style={styles.totalLabel}>Total Amount:</Text>
+              <Text style={styles.totalAmount}>₹{calculateTotal().toFixed(2)}</Text>
+            </View>
+          </View>
+        )}
+        {lineItems.length > 0 && (
           <View style={styles.itemsList}>
             {lineItems.map((item, index) => (
               <View key={index} style={styles.itemRow}>
@@ -267,61 +330,55 @@ const CreateOrderScreen = () => {
                 </View>
               </View>
             ))}
-
-            <View style={styles.totalSection}>
-              <Text style={styles.totalLabel}>Total Amount:</Text>
-              <Text style={styles.totalAmount}>₹{calculateTotal()}</Text>
-            </View>
-
-            <View style={styles.paymentSection}>
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Payment Method</Text>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={paymentMethod}
-                    onValueChange={(value) => setPaymentMethod(value as typeof paymentMethod)}
-                    style={[styles.picker, { color: '#000000' }]}
-                    dropdownIconColor="#000000"
-                  >
-                    {paymentMethodOptions.map((option) => (
-                      <Picker.Item 
-                        key={option.value} 
-                        label={option.label} 
-                        value={option.value}
-                        style={{ color: '#000000', backgroundColor: '#ffffff' }}
-                      />
-                    ))}
-                  </Picker>
-                </View>
-              </View>
-
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Payment Status</Text>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={paymentStatus}
-                    onValueChange={(value) => setPaymentStatus(value as typeof paymentStatus)}
-                    style={[styles.picker, { color: '#000000' }]}
-                    dropdownIconColor="#000000"
-                  >
-                    {paymentStatusOptions.map((option) => (
-                      <Picker.Item 
-                        key={option.value} 
-                        label={option.label} 
-                        value={option.value}
-                        style={{ color: '#000000', backgroundColor: '#ffffff' }}
-                      />
-                    ))}
-                  </Picker>
-                </View>
-              </View>
-            </View>
-
-            <TouchableOpacity style={styles.createButton} onPress={handleCreateOrder}>
-              <Text style={styles.buttonText}>Create Order</Text>
-            </TouchableOpacity>
           </View>
         )}
+        <View style={styles.paymentSection}>
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Payment Method</Text>
+            <View style={styles.pickerContainer}>
+              <Picker
+                selectedValue={paymentMethod}
+                onValueChange={(value) => setPaymentMethod(value as typeof paymentMethod)}
+                style={[styles.picker, { color: '#000000' }]}
+                dropdownIconColor="#000000"
+              >
+                {paymentMethodOptions.map((option) => (
+                  <Picker.Item 
+                    key={option.value} 
+                    label={option.label} 
+                    value={option.value}
+                    style={{ color: '#000000', backgroundColor: '#ffffff' }}
+                  />
+                ))}
+              </Picker>
+            </View>
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Payment Status</Text>
+            <View style={styles.pickerContainer}>
+              <Picker
+                selectedValue={paymentStatus}
+                onValueChange={(value) => setPaymentStatus(value as typeof paymentStatus)}
+                style={[styles.picker, { color: '#000000' }]}
+                dropdownIconColor="#000000"
+              >
+                {paymentStatusOptions.map((option) => (
+                  <Picker.Item 
+                    key={option.value} 
+                    label={option.label} 
+                    value={option.value}
+                    style={{ color: '#000000', backgroundColor: '#ffffff' }}
+                  />
+                ))}
+              </Picker>
+            </View>
+          </View>
+        </View>
+
+        <TouchableOpacity style={styles.createButton} onPress={handleCreateOrder}>
+          <Text style={styles.buttonText}>Create Order</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -458,24 +515,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
   },
-  totalSection: {
+  totalContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 2,
-    borderTopColor: '#ddd',
+    paddingVertical: 5,
   },
   totalLabel: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: 16,
+    fontWeight: '600',
   },
   totalAmount: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  finalTotal: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+  },
+  summaryContainer: {
+    backgroundColor: '#f5f5f5',
+    padding: 15,
+    marginTop: 15,
+    borderRadius: 8,
   },
   paymentSection: {
     marginTop: 16,

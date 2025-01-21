@@ -12,6 +12,11 @@ type ShopOrderDetailsParams = {
     amount: number;
   }>;
   totalAmount: number;
+  subtotal: number;
+  gstAmount: number;
+  gstPercentage: number;
+  discountAmount: number;
+  discountPercentage: number;
 };
 
 type RootStackParamList = {
@@ -25,7 +30,17 @@ interface Props {
 }
 
 const ShopOrderDetailsScreen: React.FC<Props> = ({ route }) => {
-  const { shopName, area, orders, totalAmount } = route.params;
+  const { 
+    shopName, 
+    area, 
+    orders, 
+    totalAmount, 
+    subtotal,
+    gstAmount,
+    gstPercentage,
+    discountAmount,
+    discountPercentage
+  } = route.params;
 
   return (
     <ScrollView style={styles.container}>
@@ -49,9 +64,30 @@ const ShopOrderDetailsScreen: React.FC<Props> = ({ route }) => {
         ))}
       </View>
 
-      <View style={styles.totalContainer}>
-        <Text style={styles.totalLabel}>Total Amount</Text>
-        <Text style={styles.totalAmount}>₹{totalAmount}</Text>
+      <View style={styles.summaryContainer}>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Subtotal</Text>
+          <Text style={styles.summaryValue}>₹{subtotal}</Text>
+        </View>
+
+        {discountAmount > 0 && (
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Discount ({discountPercentage}%)</Text>
+            <Text style={[styles.summaryValue, styles.discountText]}>-₹{discountAmount}</Text>
+          </View>
+        )}
+
+        {gstAmount > 0 && (
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>GST ({gstPercentage}%)</Text>
+            <Text style={[styles.summaryValue, styles.gstText]}>+₹{gstAmount}</Text>
+          </View>
+        )}
+
+        <View style={[styles.summaryRow, styles.totalRow]}>
+          <Text style={styles.totalLabel}>Total Amount</Text>
+          <Text style={styles.totalAmount}>₹{totalAmount}</Text>
+        </View>
       </View>
     </ScrollView>
   );
@@ -114,15 +150,37 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#34C759',
   },
-  totalContainer: {
+  summaryContainer: {
     backgroundColor: '#fff',
     padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
+    marginTop: 20,
+  },
+  summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 20,
+    paddingVertical: 8,
+  },
+  summaryLabel: {
+    fontSize: 16,
+    color: '#666',
+  },
+  summaryValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  discountText: {
+    color: '#FF3B30',
+  },
+  gstText: {
+    color: '#007AFF',
+  },
+  totalRow: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
   },
   totalLabel: {
     fontSize: 18,
