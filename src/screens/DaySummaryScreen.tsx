@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity
 import auth from '@react-native-firebase/auth';
 import { getTodaySummary } from '../services/firestoreService';
 import { useNavigation } from '@react-navigation/native';
+import { formatDistance } from '../utils/distanceFormatter';
 
 interface ShopSummary {
   shopName: string;
@@ -86,7 +87,9 @@ const DaySummaryScreen = () => {
       <View style={styles.statsContainer}>
         <View style={[styles.statBox, styles.distanceBox]}>
           <Text style={styles.statLabel}>Total Distance</Text>
-          <Text style={styles.statValue}>{summary?.totalDistance ? summary.totalDistance.toFixed(4) : '0.0000'} km</Text>
+          <Text style={styles.statValue}>
+            {formatDistance(summary?.totalDistance || 0, 'km')}
+          </Text>
         </View>
 
         <View style={[styles.statBox, styles.ordersBox]}>
