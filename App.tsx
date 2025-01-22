@@ -12,6 +12,7 @@ import DaySummaryScreen from './src/screens/DaySummaryScreen';
 import { Location } from './src/screens/TrackingScreen';
 import AddShopScreen from './src/screens/AddShopScreen';
 import ShopOrderDetailsScreen from './src/screens/ShopOrderDetailsScreen';
+import MapViewScreen from './src/screens/MapViewScreen';
 
 type RootStackParamList = {
   Login: undefined;
@@ -25,6 +26,19 @@ type RootStackParamList = {
   CreateOrder: undefined;
   DaySummary: undefined;
   AddShop: undefined;
+  MapView: {
+    shop: {
+      id: string;
+      name: string;
+      latitude: number;
+      longitude: number;
+    };
+    userLocation: {
+      latitude: number;
+      longitude: number;
+    };
+    distance: number;
+  };
   ShopOrderDetails: {
     shopName: string;
     area: string;
@@ -76,6 +90,21 @@ function App(): React.JSX.Element {
             options={{ 
               headerShown: true,
               headerTitle: 'Add New Shop',
+              headerStyle: {
+                backgroundColor: '#4c669f',
+              },
+              headerTintColor: '#fff',
+              headerTitleStyle: {
+                fontWeight: 'bold',
+              },
+            }}
+          />
+          <Stack.Screen 
+            name="MapView" 
+            component={MapViewScreen}
+            options={{ 
+              headerShown: true,
+              headerTitle: 'Shop Location',
               headerStyle: {
                 backgroundColor: '#4c669f',
               },

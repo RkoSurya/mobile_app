@@ -37,6 +37,19 @@ export type RootStackParamList = {
   DaySummary: {
     resetDay: () => void;
   };
+  MapView: {
+    shop: {
+      id: string;
+      name: string;
+      latitude: number;
+      longitude: number;
+    };
+    userLocation: {
+      latitude: number;
+      longitude: number;
+    };
+    distance: number;
+  };
 };
 
 export type NavigationProp = NativeStackNavigationProp<RootStackParamList>;

@@ -205,28 +205,46 @@ const NearbyShopsScreen = () => {
     navigation.navigate('AddShop', { currentLocation });
   };
 
-  const ShopCard = ({ shop, currentLocation }: { shop: Shop; currentLocation?: Coordinates }) => {
-    const handleShopSelect = () => {
-      console.log('Selected shop:', {
+  const handleShopPress = (shop: Shop) => {
+    if (!currentLocation) return;
+    
+    const distance = calculateDistance(
+      currentLocation.coords.latitude,
+      currentLocation.coords.longitude,
+      shop.latitude,
+      shop.longitude
+    );
+
+    navigation.navigate('MapView', {
+      shop: {
         id: shop.id,
         name: shop.name,
-        area: shop.area,
-        distance: shop.distance
-      });
-      
-      navigation.navigate('CreateOrder', {
-        shop: {
-          id: shop.id,
-          name: shop.name,
-          area: shop.area,
-          distance: shop.distance
-        },
-        visitId: route.params.journeyId
-      });
-    };
+        latitude: shop.latitude,
+        longitude: shop.longitude,
+      },
+      userLocation: {
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+      },
+      distance: distance
+    });
+  };
+
+  const renderShopItem = ({ item: shop }: { item: Shop }) => {
+    if (!currentLocation) return null;
+
+    const distance = calculateDistance(
+      currentLocation.coords.latitude,
+      currentLocation.coords.longitude,
+      shop.latitude,
+      shop.longitude
+    );
 
     return (
-      <TouchableOpacity style={styles.shopCard} onPress={handleShopSelect}>
+      <TouchableOpacity
+        style={styles.shopCard}
+        onPress={() => handleShopPress(shop)}
+      >
         <View style={styles.shopInfo}>
           <Text style={styles.shopName}>{shop.name}</Text>
           <Text style={styles.shopArea}>{shop.area}</Text>
@@ -272,9 +290,7 @@ const NearbyShopsScreen = () => {
             <FlatList
               data={shops}
               keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <ShopCard shop={item} currentLocation={currentLocation?.coords} />
-              )}
+              renderItem={renderShopItem}
             />
           ) : (
             <Text style={styles.noShopsText}>No shops found nearby</Text>
