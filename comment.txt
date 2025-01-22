@@ -14,3 +14,20 @@ if we wants to created app into apk file:-
 
 command: "gradlew assembleDebug" for release version
 command: "gradlew assembleRelease" for debug version finding the apk file: C:\Users\surya\Project\android\app\build\outputs\apk\release
+
+if there any issues in app:-
+
+npx react-native doctor for finding any error or missing dependency 
+
+
+wireless debugging:-
+
+developer option in phone
+click the wireless debugging option
+click the pair device with pairing code
+ and then cmd in ipconfig
+ after command called  adb pair 192.168.68.50:41645 from pairing code
+ Enter pairing code: 549621 it often changed
+ adb connect 192.168.68.50:41883 this wifi from ipconfig
+
+

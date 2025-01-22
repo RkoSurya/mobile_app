@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
-import { createOrder, LineItem } from '../services/firestoreService';
+import { createOrder, LineItem, saveProduct, searchProducts } from '../services/firestoreService';
 import auth from '@react-native-firebase/auth';
 
 type RouteParams = {
@@ -40,6 +40,8 @@ const CreateOrderScreen = () => {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [gstPercentage, setGstPercentage] = useState<number>(0);
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
+  const [productSuggestions, setProductSuggestions] = useState<Array<{ id: string; name: string }>>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   // UOM options
   const uomOptions = [
@@ -74,30 +76,59 @@ const CreateOrderScreen = () => {
     );
   }
 
-  const handleAddItem = () => {
+  const handleProductNameChange = async (text: string) => {
+    setCurrentItem(prev => ({ ...prev, product_name: text }));
+    
+    if (text.length > 0) {
+      try {
+        const suggestions = await searchProducts(text);
+        setProductSuggestions(suggestions);
+        setShowSuggestions(true);
+      } catch (error) {
+        console.error('Error fetching suggestions:', error);
+      }
+    } else {
+      setShowSuggestions(false);
+    }
+  };
+
+  const selectProduct = (productName: string) => {
+    setCurrentItem(prev => ({ ...prev, product_name: productName }));
+    setShowSuggestions(false);
+  };
+
+  const handleAddItem = async () => {
     if (!currentItem.product_name || !currentItem.quantity || !currentItem.uom || !currentItem.amount) {
       Alert.alert('Error', 'Please fill in all item details');
       return;
     }
 
-    if (editingIndex !== null) {
-      // Update existing item
-      const newItems = [...lineItems];
-      newItems[editingIndex] = currentItem;
-      setLineItems(newItems);
-      setEditingIndex(null);
-    } else {
-      // Add new item
-      setLineItems([...lineItems, currentItem]);
-    }
+    try {
+      // Save the product to Firestore for future suggestions
+      await saveProduct(currentItem.product_name);
 
-    // Reset form
-    setCurrentItem({
-      product_name: '',
-      quantity: 0,
-      uom: '',
-      amount: 0
-    });
+      if (editingIndex !== null) {
+        // Update existing item
+        const newItems = [...lineItems];
+        newItems[editingIndex] = currentItem;
+        setLineItems(newItems);
+        setEditingIndex(null);
+      } else {
+        // Add new item
+        setLineItems([...lineItems, currentItem]);
+      }
+
+      // Reset form
+      setCurrentItem({
+        product_name: '',
+        quantity: 0,
+        uom: '',
+        amount: 0
+      });
+    } catch (error) {
+      console.error('Error adding item:', error);
+      Alert.alert('Error', 'Failed to add item');
+    }
   };
 
   const handleEditItem = (index: number) => {
@@ -191,12 +222,30 @@ const CreateOrderScreen = () => {
           <View style={styles.row}>
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Product Name</Text>
-              <TextInput
-                style={styles.input}
-                value={currentItem.product_name}
-                onChangeText={(text) => setCurrentItem({ ...currentItem, product_name: text })}
-                placeholder="Enter product name"
-              />
+              <View style={styles.productInputContainer}>
+                <TextInput
+                  style={styles.input}
+                  value={currentItem.product_name}
+                  onChangeText={handleProductNameChange}
+                  placeholder="Enter product name"
+                />
+                {showSuggestions && productSuggestions.length > 0 && (
+                  <ScrollView 
+                    style={styles.suggestionsContainer}
+                    nestedScrollEnabled={true}
+                  >
+                    {productSuggestions.map((item) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={styles.suggestionItem}
+                        onPress={() => selectProduct(item.name)}
+                      >
+                        <Text>{item.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
             </View>
 
             <TouchableOpacity 
@@ -556,6 +605,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     margin: 16,
+  },
+  productInputContainer: {
+    position: 'relative',
+    zIndex: 1,
+  },
+  suggestionsContainer: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    backgroundColor: 'white',
+    borderRadius: 4,
+    elevation: 3,
+    maxHeight: 150,
+    zIndex: 1000,
+  },
+  suggestionItem: {
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
 });
 

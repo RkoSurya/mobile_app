@@ -67,6 +67,7 @@ export const addLocationData = async (
     const trackingLocations = journeyData?.tracking_locations || {};
     const locationEntries = Object.entries(trackingLocations);
     
+    let calculatedDistance = 0;
     if (locationEntries.length > 0) {
       // Sort by timestamp to get the latest entry
       const [_, lastLocation] = locationEntries
@@ -80,20 +81,27 @@ export const addLocationData = async (
       const lastLatString = lastLocation.latitude_string || Number(lastLocation.latitude.toFixed(7)).toFixed(7);
       const lastLngString = lastLocation.longitude_string || Number(lastLocation.longitude.toFixed(7)).toFixed(7);
       
-    
-      
       if (lastLatString === newLatString && lastLngString === newLngString) {
         console.log('Location unchanged, skipping update');
         return;
       }
-    }
 
-    // Update total distance for both day_tracking and shop_in events
-    if (locationData.distance && locationData.distance > 0) {
-      await journeyRef.update({
-        total_distance: firestore.FieldValue.increment(locationData.distance),
-        end_time: firestore.Timestamp.now()
-      });
+      // Calculate distance only if location has changed
+      calculatedDistance = calculateDistance(
+        Number(lastLatString),
+        Number(lastLngString),
+        Number(newLatString),
+        Number(newLngString)
+      );
+
+      // Only update total distance if it's a reasonable value (less than 1km between points)
+      // This helps filter out GPS jumps
+      if (calculatedDistance > 0 && calculatedDistance < 1000) {
+        await journeyRef.update({
+          total_distance: firestore.FieldValue.increment(calculatedDistance),
+          end_time: firestore.Timestamp.now()
+        });
+      }
     }
 
     // Create a new location entry
@@ -535,6 +543,49 @@ export const getTodaySummary = async (userId: string) => {
     return summary;
   } catch (error) {
     console.error('Error generating summary:', error);
+    throw error;
+  }
+};
+
+// Product related functions
+export const saveProduct = async (productName: string) => {
+  try {
+    const productsRef = firestore().collection('products');
+    const searchName = productName.toLowerCase();
+    
+    const snapshot = await productsRef.where('searchName', '==', searchName).get();
+    
+    if (snapshot.empty) {
+      await productsRef.add({
+        name: productName,
+        searchName: productName.toLowerCase(), // Store lowercase version for searching
+        createdAt: firestore.FieldValue.serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    console.error('Error saving product:', error);
+    throw error;
+  }
+};
+
+export const searchProducts = async (searchText: string) => {
+  try {
+    const productsRef = firestore().collection('products');
+    const searchTextLower = searchText.toLowerCase();
+    
+    const snapshot = await productsRef
+      .orderBy('searchName')
+      .startAt(searchTextLower)
+      .endAt(searchTextLower + '\uf8ff')
+      .limit(10)
+      .get();
+
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      name: doc.data().name, // Return original name with proper case
+    }));
+  } catch (error) {
+    console.error('Error searching products:', error);
     throw error;
   }
 };
