@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -104,7 +104,7 @@ const NearbyShopsScreen = () => {
         // Save location with distance for shop visits
         const currentUser = auth().currentUser;
         if (!currentUser) return;
-
+        
         // Calculate distance if we have previous location
         let newDistance = 0;
         if (lastLocation.current) {
@@ -119,7 +119,7 @@ const NearbyShopsScreen = () => {
 
         const today = new Date().toISOString().split('T')[0];
         const journeyId = `daily_journey_id_${today}`;  // Using consistent format
-        
+
         await addLocationData(currentUser.uid, journeyId, {
           latitude: currentLocation.coords.latitude,
           longitude: currentLocation.coords.longitude,

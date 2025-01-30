@@ -49,6 +49,9 @@ const DaySummaryScreen = () => {
       }
 
       const data = await getTodaySummary(currentUser.uid);
+      if (data?.totalDistance?.value) {
+        data.totalDistance.formatted = formatDistance(data.totalDistance.value);
+      }
       setSummary(data);
     } catch (error) {
       console.error('Error loading summary:', error);
@@ -101,7 +104,7 @@ const DaySummaryScreen = () => {
         <View style={[styles.statBox, styles.distanceBox]}>
           <Text style={styles.statLabel}>Total Distance</Text>
           <Text style={styles.statValue}>
-            {formatDistance(summary?.totalDistance || 0, 'km')}
+            {summary?.totalDistance?.formatted || '0 m'}
           </Text>
         </View>
 

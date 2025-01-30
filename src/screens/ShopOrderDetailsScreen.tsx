@@ -1,6 +1,17 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TouchableOpacity, 
+  ToastAndroid,
+  Platform,
+  Alert 
+} from 'react-native';
 import { RouteProp } from '@react-navigation/native';
+import XLSX from 'xlsx';
+import RNFetchBlob from 'rn-fetch-blob';
 
 type ShopOrderDetailsParams = {
   shopName: string;
@@ -30,6 +41,8 @@ interface Props {
 }
 
 const ShopOrderDetailsScreen: React.FC<Props> = ({ route }) => {
+  const [isExporting, setIsExporting] = useState(false);
+
   const { 
     shopName, 
     area, 
@@ -42,12 +55,100 @@ const ShopOrderDetailsScreen: React.FC<Props> = ({ route }) => {
     discountPercentage
   } = route.params;
 
+  const showMessage = (message: string) => {
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(message, ToastAndroid.SHORT);
+    } else {
+      Alert.alert('', message);
+    }
+  };
+
+  const exportToExcel = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+
+    try {
+      // Prepare data for Excel
+      const orderData = orders.map(order => ({
+        'Shop Name': shopName,
+        'Area': area,
+        'Product Name': order.product_name,
+        'Quantity': order.quantity,
+        'UOM': order.uom,
+        'Price': order.amount,
+        'GST (%)': gstPercentage,
+        'GST Amount': gstAmount,
+        'Discount (%)': discountPercentage,
+        'Discount Amount': discountAmount,
+        'Total': totalAmount
+      }));
+
+      // Create worksheet
+      const ws = XLSX.utils.json_to_sheet(orderData);
+      
+      // Set column widths
+      const colWidths = [
+        { wch: 20 }, // Shop Name
+        { wch: 15 }, // Area
+        { wch: 25 }, // Product Name
+        { wch: 10 }, // Quantity
+        { wch: 10 }, // UOM
+        { wch: 12 }, // Price
+        { wch: 10 }, // GST %
+        { wch: 12 }, // GST Amount
+        { wch: 12 }, // Discount %
+        { wch: 15 }, // Discount Amount
+        { wch: 15 }  // Total
+      ];
+      ws['!cols'] = colWidths;
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Order Details');
+
+      // Generate Excel file with correct output type
+      const wbout = XLSX.write(wb, { 
+        type: 'base64',
+        bookType: 'xlsx'
+      });
+
+      // Create a safe filename
+      const safeShopName = shopName.replace(/[^a-zA-Z0-9]/g, '_');
+      const timestamp = new Date().getTime();
+      const fileName = `${safeShopName}_${timestamp}.xlsx`;
+      
+      const dirs = RNFetchBlob.fs.dirs;
+      const filePath = `${dirs.DownloadDir}/${fileName}`;
+
+      // Write the base64 data directly
+      await RNFetchBlob.fs.writeFile(filePath, wbout, 'base64');
+      
+      showMessage(`Order details saved to Downloads/${fileName}`);
+    } catch (error) {
+      console.error('Export error:', error);
+      showMessage('Failed to export order details. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.shopName}>{shopName}</Text>
         <Text style={styles.area}>{area}</Text>
         <Text style={styles.subtitle}>Order Details</Text>
+        <TouchableOpacity 
+          style={[
+            styles.exportButton,
+            isExporting && styles.exportButtonDisabled
+          ]}
+          onPress={exportToExcel}
+          disabled={isExporting}
+        >
+          <Text style={styles.exportButtonText}>
+            {isExporting ? 'Downloading...' : 'Download as Excel'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.ordersList}>
@@ -118,6 +219,21 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#666',
+  },
+  exportButton: {
+    backgroundColor: '#34C759',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10,
+    marginHorizontal: 20,
+  },
+  exportButtonDisabled: {
+    backgroundColor: '#A0A0A0',
+  },
+  exportButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   ordersList: {
     padding: 16,

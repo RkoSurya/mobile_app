@@ -12,7 +12,7 @@ import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import auth from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { addUserToFirestore } from '../services/firestoreService';
+import { addUserToFirestore, getUserNameByEmail } from '../services/firestoreService';
 
 type RootStackParamList = {
   Login: undefined;
@@ -73,8 +73,13 @@ const LoginScreen = () => {
         });
     } else {
       auth().signInWithEmailAndPassword(email, password)
-        .then((userCredential) => {
+        .then(async (userCredential) => {
           const user = userCredential.user;
+          // Get and store user's name
+          const userName = await getUserNameByEmail(email);
+          if (userName) {
+            await AsyncStorage.setItem('userName', userName);
+          }
           navigation.replace('Home');
         })
         .catch((error) => {

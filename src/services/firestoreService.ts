@@ -32,6 +32,10 @@ export const addLocationData = async (
     // Get the journey document
     const journeyDoc = await journeyRef.get();
     
+    // Format new coordinates with consistent precision
+    const newLatString = Number(locationData.latitude.toFixed(7)).toFixed(7);
+    const newLngString = Number(locationData.longitude.toFixed(7)).toFixed(7);
+    
     // If this is the first location entry for this journey, initialize the journey document
     if (!journeyDoc.exists) {
       const now = firestore.Timestamp.now();
@@ -44,13 +48,16 @@ export const addLocationData = async (
         total_distance: 0,
         tracking_locations: {}
       });
+      
       // First location should always be added
       const firstLocationId = `timestamp_${Date.now()}`;
       await journeyRef.update({
         end_time: now,
         [`tracking_locations.${firstLocationId}`]: {
-          latitude: Number(locationData.latitude.toFixed(7)),
-          longitude: Number(locationData.longitude.toFixed(7)),
+          latitude: Number(newLatString),
+          longitude: Number(newLngString),
+          latitude_string: newLatString,
+          longitude_string: newLngString,
           timestamp: now,
           accuracy: Number(locationData.accuracy.toFixed(2)),
           battery_level: locationData.batteryLevel,
@@ -67,27 +74,23 @@ export const addLocationData = async (
     const trackingLocations = journeyData?.tracking_locations || {};
     const locationEntries = Object.entries(trackingLocations);
     
-    let calculatedDistance = 0;
     if (locationEntries.length > 0) {
       // Sort by timestamp to get the latest entry
       const [_, lastLocation] = locationEntries
         .sort(([a], [b]) => parseInt(b.split('_')[1]) - parseInt(a.split('_')[1]))[0];
       
-      // Format new coordinates
-      const newLatString = Number(locationData.latitude.toFixed(7)).toFixed(7);
-      const newLngString = Number(locationData.longitude.toFixed(7)).toFixed(7);
-      
       // Use string comparison for exact precision
       const lastLatString = lastLocation.latitude_string || Number(lastLocation.latitude.toFixed(7)).toFixed(7);
       const lastLngString = lastLocation.longitude_string || Number(lastLocation.longitude.toFixed(7)).toFixed(7);
       
+      // Check if location has changed, regardless of event type
       if (lastLatString === newLatString && lastLngString === newLngString) {
-        console.log('Location unchanged, skipping update');
+        console.log(`Location unchanged for ${locationData.eventType}, skipping update`);
         return;
       }
 
       // Calculate distance only if location has changed
-      calculatedDistance = calculateDistance(
+      const calculatedDistance = calculateDistance(
         Number(lastLatString),
         Number(lastLngString),
         Number(newLatString),
@@ -108,18 +111,14 @@ export const addLocationData = async (
     const timestamp = firestore.Timestamp.now();
     const locationId = `timestamp_${Date.now()}`;
 
-    // Format coordinates with consistent precision
-    const formattedLat = Number(locationData.latitude.toFixed(7));
-    const formattedLng = Number(locationData.longitude.toFixed(7));
-
     // Prepare the update data
     const updateData: any = {
       end_time: timestamp,
       [`tracking_locations.${locationId}`]: {
-        latitude: formattedLat,
-        longitude: formattedLng,
-        latitude_string: formattedLat.toFixed(7),  // Store as string to preserve exact precision
-        longitude_string: formattedLng.toFixed(7), // Store as string to preserve exact precision
+        latitude: Number(newLatString),
+        longitude: Number(newLngString),
+        latitude_string: newLatString,
+        longitude_string: newLngString,
         timestamp: timestamp,
         accuracy: Number(locationData.accuracy.toFixed(2)),
         battery_level: locationData.batteryLevel,
@@ -146,6 +145,16 @@ export const addLocationData = async (
     console.error('Error adding location data:', error);
     throw error;
   }
+};
+
+// Function to generate a unique journey ID for a user's daily tracking
+export const generateJourneyId = (userId: string): string => {
+  // Get current date in YYYY-MM-DD format
+  const today = new Date();
+  const dateStr = today.toISOString().split('T')[0];
+  
+  // Combine userId and date to create a unique journey ID
+  return `${userId}_${dateStr}`;
 };
 
 // Add a new function to get user's journeys

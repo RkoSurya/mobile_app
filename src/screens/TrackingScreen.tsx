@@ -286,7 +286,10 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
         try {
           const batteryLevel = await DeviceInfo.getBatteryLevel();
 
-          await addLocationData(currentUser.uid, `daily_journey_id_${new Date().toISOString().split('T')[0]}`, {
+          const today = new Date().toISOString().split('T')[0];
+          const journeyId = `daily_journey_id_${today}`;  // Using consistent format
+
+          await addLocationData(currentUser.uid, journeyId, {
             latitude: currentLocation.latitude,
             longitude: currentLocation.longitude,
             accuracy: currentLocation.accuracy,
@@ -470,6 +473,8 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
   const handleShopReached = () => {
     setIsPaused(true);
     setIsTracking(false);
+    const today = new Date().toISOString().split('T')[0];
+    const journeyId = `daily_journey_id_${today}`;  // Using consistent format
     navigation.navigate('NearbyShops', {
       currentLocation: currentLocation ? {
         coords: {
@@ -485,7 +490,7 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
       } : null,
       distance: Number(distance.toFixed(3)),
       currentTime: time,
-      journeyId: `daily_journey_id_${new Date().toISOString().split('T')[0]}`,
+      journeyId: journeyId,
       preserveState: true,
       isTracking: isTracking,
       isPaused: isPaused

@@ -25,7 +25,7 @@ wireless debugging:-
 developer option in phone
 click the wireless debugging option
 click the pair device with pairing code
- and then cmd in ipconfig
+ and then cmd in "ipconfig"
  after command called  adb pair 192.168.68.50:41645 from pairing code
  Enter pairing code: 549621 it often changed
  adb connect 192.168.68.50:41883 this wifi from ipconfig
