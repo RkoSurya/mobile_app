@@ -13,8 +13,12 @@ import { Location } from './src/screens/TrackingScreen';
 import AddShopScreen from './src/screens/AddShopScreen';
 import ShopOrderDetailsScreen from './src/screens/ShopOrderDetailsScreen';
 import MapViewScreen from './src/screens/MapViewScreen';
+import TodayTrackingScreen from './src/screens/TodayTrackingScreen';
+import AdminLoginPage from './src/admin-screen/LoginPage';
+import SalespersonListScreen from './src/admin-screen/SalespersonListScreen';
 
 type RootStackParamList = {
+  TodayTracking: undefined;
   Login: undefined;
   Home: undefined;
   Tracking: undefined;
@@ -26,6 +30,7 @@ type RootStackParamList = {
   CreateOrder: undefined;
   DaySummary: undefined;
   AddShop: undefined;
+  AdminLogin: undefined;
   MapView: {
     shop: {
       id: string;
@@ -50,6 +55,7 @@ type RootStackParamList = {
     }>;
     totalAmount: number;
   };
+  SalespersonList: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -60,10 +66,15 @@ function App(): React.JSX.Element {
       <NavigationContainer>
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
         <Stack.Navigator 
-          initialRouteName="Login"
+          initialRouteName="TodayTracking"
           screenOptions={{
             headerShown: false,
           }}>
+          <Stack.Screen 
+            name="TodayTracking" 
+            component={TodayTrackingScreen}
+            options={{ headerShown: false }}
+          />
           <Stack.Screen 
             name="Login" 
             component={LoginScreen}
@@ -135,6 +146,36 @@ function App(): React.JSX.Element {
             component={DaySummaryScreen}
             options={{
               headerShown: false
+            }}
+          />
+          <Stack.Screen 
+            name="AdminLogin" 
+            component={AdminLoginPage}
+            options={{
+              headerShown: true,
+              title: 'Admin Login',
+              headerStyle: {
+                backgroundColor: '#4c669f',
+              },
+              headerTintColor: '#fff',
+              headerTitleStyle: {
+                fontWeight: 'bold',
+              },
+            }}
+          />
+          <Stack.Screen 
+            name="SalespersonList" 
+            component={SalespersonListScreen}
+            options={{
+              headerShown: true,
+              title: 'Salespersons',
+              headerStyle: {
+                backgroundColor: '#4c669f',
+              },
+              headerTintColor: '#fff',
+              headerTitleStyle: {
+                fontWeight: 'bold',
+              },
             }}
           />
         </Stack.Navigator>

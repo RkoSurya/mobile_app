@@ -18,6 +18,8 @@ import { Shop } from '../services/firestoreService';
 export type RootStackParamList = {
   Login: undefined;
   Home: undefined;
+  AdminLogin: undefined;
+  SalespersonList: undefined;
   Tracking: {
     shouldResume?: boolean;
     journeyId?: string;

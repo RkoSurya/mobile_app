@@ -252,12 +252,12 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
           },
           error => console.error('Error watching position:', error),
           {
-            enableHighAccuracy: false,  // Changed to false to prioritize speed over accuracy
-            distanceFilter: 0,  // Remove distance filter to get all updates
-            interval: 60000,     // Update every 60 seconds
-            fastestInterval: 60000,
-            maximumAge: 30000,  // Accept locations up to 30 seconds old
-            timeout: 30000,     // Allow 30 seconds to get a location fix
+            enableHighAccuracy: false,
+            distanceFilter: 0,
+            interval: 20000,     // Update every 20 seconds
+            fastestInterval: 20000,
+            maximumAge: 10000,  // Accept locations up to 10 seconds old
+            timeout: 20000,     // Allow 20 seconds to get a location fix
             forceRequestLocation: true,
             showLocationDialog: true,
             useSignificantChanges: false
@@ -309,7 +309,7 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
         }
       };
 
-      firestoreIntervalRef.current = BackgroundTimer.setInterval(updateFirestore, 20000);  // Update Firestore every 5 seconds to match location updates
+      firestoreIntervalRef.current = BackgroundTimer.setInterval(updateFirestore, 20000);  // Update Firestore every 20 seconds
 
       return () => {
         if (firestoreIntervalRef.current) {

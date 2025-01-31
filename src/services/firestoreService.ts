@@ -598,3 +598,16 @@ export const searchProducts = async (searchText: string) => {
     throw error;
   }
 };
+
+export const getAllUsers = async () => {
+  try {
+    const usersSnapshot = await firestore().collection('users').get();
+    return usersSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('Error getting all users:', error);
+    throw error;
+  }
+};

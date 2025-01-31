@@ -70,7 +70,7 @@ const styles = StyleSheet.create({
   },
   startDayButton: {
     height: 56,
-    backgroundColor: '#22C55E', // Green color
+    backgroundColor: '#22C55E', 
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',

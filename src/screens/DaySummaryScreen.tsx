@@ -104,7 +104,7 @@ const DaySummaryScreen = () => {
         <View style={[styles.statBox, styles.distanceBox]}>
           <Text style={styles.statLabel}>Total Distance</Text>
           <Text style={styles.statValue}>
-            {summary?.totalDistance?.formatted || '0 m'}
+            {summary?.totalDistance?.formatted || formatDistance(summary?.totalDistance || 0)}
           </Text>
         </View>
 
