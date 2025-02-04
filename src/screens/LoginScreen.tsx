@@ -12,7 +12,7 @@ import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import auth from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { addUserToFirestore, getUserNameByEmail } from '../services/firestoreService';
+import { addUserToFirestore, getUserNameByEmail, updateUserSignInStatus } from '../services/firestoreService';
 
 type RootStackParamList = {
   Login: undefined;
@@ -63,10 +63,15 @@ const LoginScreen = () => {
             email: email,
             phoneNumber: phoneNumber,
           };
-          addUserToFirestore(userData);
-          Alert.alert('Success', 'Account created successfully!', [
-            { text: 'OK', onPress: () => navigation.replace('Login') }
-          ]);
+          addUserToFirestore(userData, user.uid)
+            .then(() => {
+              Alert.alert('Success', 'Account created successfully!', [
+                { text: 'OK', onPress: () => navigation.replace('Login') }
+              ]);
+            })
+            .catch((error) => {
+              Alert.alert('Error', 'Failed to create user profile: ' + error.message);
+            });
         })
         .catch((error) => {
           Alert.alert('Error', error.message);
@@ -80,6 +85,8 @@ const LoginScreen = () => {
           if (userName) {
             await AsyncStorage.setItem('userName', userName);
           }
+          // Update user's sign-in status
+          await updateUserSignInStatus(user.uid, true);
           navigation.replace('Home');
         })
         .catch((error) => {

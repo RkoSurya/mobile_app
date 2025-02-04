@@ -1,12 +1,18 @@
 import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 
 // Function to add user data to Firestore
-export const addUserToFirestore = async (userData: { name: string; email: string; phoneNumber: string }) => {
+export const addUserToFirestore = async (userData: { name: string; email: string; phoneNumber: string }, userId: string) => {
   try {
-    await firestore().collection('users').add(userData);
+    await firestore().collection('users').doc(userId).set({
+      ...userData,
+      created_at: firestore.Timestamp.now(),
+      isActive: true,
+      lastSignIn: firestore.Timestamp.now()
+    });
     console.log('User added to Firestore!');
   } catch (error) {
     console.error('Error adding user to Firestore: ', error);
+    throw error;
   }
 };
 
@@ -608,6 +614,81 @@ export const getAllUsers = async () => {
     }));
   } catch (error) {
     console.error('Error getting all users:', error);
+    throw error;
+  }
+};
+
+export const updateUserSignInStatus = async (userId: string, isSigningIn: boolean) => {
+  try {
+    const userRef = firestore().collection('users').doc(userId);
+    const timestamp = firestore.Timestamp.now();
+    
+    const updates: any = {
+      isActive: isSigningIn,
+      activityHistory: firestore.FieldValue.arrayUnion({
+        type: isSigningIn ? 'sign_in' : 'end_day',
+        timestamp: timestamp,
+        date: timestamp.toDate().toLocaleDateString(),
+        time: timestamp.toDate().toLocaleTimeString()
+      })
+    };
+
+    // Update the appropriate timestamp field
+    if (isSigningIn) {
+      updates.lastSignIn = timestamp;
+    } else {
+      updates.lastEndDay = timestamp;
+    }
+
+    await userRef.update(updates);
+  } catch (error) {
+    console.error('Error updating user activity status:', error);
+    throw error;
+  }
+};
+
+export const getUserActivityHistory = async (userId: string) => {
+  try {
+    const userDoc = await firestore().collection('users').doc(userId).get();
+    const userData = userDoc.data();
+    return (userData?.activityHistory || []).sort((a, b) => {
+      // Sort by timestamp in descending order (newest first)
+      if (!a.timestamp || !b.timestamp) return 0;
+      return b.timestamp.seconds - a.timestamp.seconds;
+    });
+  } catch (error) {
+    console.error('Error getting user activity history:', error);
+    throw error;
+  }
+};
+
+export const endDay = async (userId: string) => {
+  try {
+    const userRef = firestore().collection('users').doc(userId);
+    const endDayTime = firestore.Timestamp.now();
+    
+    await userRef.update({
+      isActive: false,
+      lastEndDay: endDayTime,
+      endDayHistory: firestore.FieldValue.arrayUnion({
+        timestamp: endDayTime,
+        date: endDayTime.toDate().toLocaleDateString(),
+        time: endDayTime.toDate().toLocaleTimeString()
+      })
+    });
+  } catch (error) {
+    console.error('Error ending day:', error);
+    throw error;
+  }
+};
+
+export const getEndDayHistory = async (userId: string) => {
+  try {
+    const userDoc = await firestore().collection('users').doc(userId).get();
+    const userData = userDoc.data();
+    return userData?.endDayHistory || [];
+  } catch (error) {
+    console.error('Error getting end day history:', error);
     throw error;
   }
 };

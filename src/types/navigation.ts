@@ -20,6 +20,10 @@ export type RootStackParamList = {
   Home: undefined;
   AdminLogin: undefined;
   SalespersonList: undefined;
+  UserLocationMap: {
+    userId: string;
+    userName: string;
+  };
   Tracking: {
     shouldResume?: boolean;
     journeyId?: string;
