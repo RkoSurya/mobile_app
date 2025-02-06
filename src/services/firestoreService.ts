@@ -369,6 +369,8 @@ export interface LineItem {
   quantity: number;
   uom: string;
   amount: number;
+  gstPercentage: number;
+  discountPercentage: number;
 }
 
 export interface Order {
@@ -617,6 +619,8 @@ export const getTodaySummary = async (userId: string) => {
           quantity: number;
           uom: string;
           amount: number;
+          gstPercentage: number;
+          discountPercentage: number;
         }>;
       }>
     };
@@ -644,23 +648,31 @@ export const getTodaySummary = async (userId: string) => {
       shopSummary.subtotal += order.subtotal || 0;
       shopSummary.gstAmount += order.gst_amount || 0;
       shopSummary.discountAmount += order.discount_amount || 0;
-      
-      // Update percentages (using the latest order's percentages)
-      shopSummary.gstPercentage = order.gst_percentage || 0;
-      shopSummary.discountPercentage = order.discount_percentage || 0;
 
-      // Aggregate products
-      order.line_items?.forEach(item => {
-        if (!shopSummary.products[item.product_name]) {
-          shopSummary.products[item.product_name] = {
+      // Calculate weighted average percentages
+      if (order.subtotal > 0) {
+        shopSummary.gstPercentage = (shopSummary.gstAmount / shopSummary.subtotal) * 100;
+        shopSummary.discountPercentage = (shopSummary.discountAmount / shopSummary.subtotal) * 100;
+      }
+
+      // Process each line item
+      order.line_items.forEach(item => {
+        const productKey = item.product_name;
+        if (!shopSummary.products[productKey]) {
+          shopSummary.products[productKey] = {
             quantity: 0,
             uom: item.uom,
-            amount: 0
+            amount: 0,
+            gstPercentage: item.gstPercentage || 0,
+            discountPercentage: item.discountPercentage || 0
           };
         }
-        const product = shopSummary.products[item.product_name];
-        product.quantity += item.quantity || 0;
-        product.amount += item.amount || 0;
+
+        const productSummary = shopSummary.products[productKey];
+        productSummary.quantity += item.quantity;
+        productSummary.amount += item.amount;
+        productSummary.gstPercentage = item.gstPercentage || 0;
+        productSummary.discountPercentage = item.discountPercentage || 0;
       });
     });
 

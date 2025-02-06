@@ -19,6 +19,8 @@ interface ShopSummary {
     quantity: number;
     uom: string;
     amount: number;
+    gstPercentage: number;
+    discountPercentage: number;
   }>;
 }
 
@@ -60,13 +62,15 @@ const DaySummaryScreen = () => {
     }
   };
 
-  const handleShopPress = (shopName: string, area: string, products: Record<string, { quantity: number; uom: string; amount: number }>) => {
+  const handleShopPress = (shopName: string, area: string, products: Record<string, { quantity: number; uom: string; amount: number; gstPercentage: number; discountPercentage: number }>) => {
     const shopSummary = Object.values(summary?.shopSummaries || {}).find(s => s.shopName === shopName);
     if (!shopSummary) return;
 
     const ordersList = Object.entries(products).map(([product_name, details]) => ({
       product_name,
-      ...details
+      ...details,
+      gstPercentage: details.gstPercentage || 0,
+      discountPercentage: details.discountPercentage || 0
     }));
 
     navigation.navigate('ShopOrderDetails', {
@@ -116,12 +120,12 @@ const DaySummaryScreen = () => {
 
       <View style={[styles.statBox, styles.amountBox]}>
         <Text style={styles.statLabel}>Total Amount</Text>
-        <Text style={styles.statValue}>₹{summary?.totalAmount || 0}</Text>
+        <Text style={styles.statValue}>₹{Math.round(summary?.totalAmount || 0)}</Text>
         {summary?.totalDiscountAmount > 0 && (
-          <Text style={styles.statDetail}>Discount: -₹{summary.totalDiscountAmount}</Text>
+          <Text style={styles.statDetail}>Discount: -₹{Math.round(summary.totalDiscountAmount)}</Text>
         )}
         {summary?.totalGstAmount > 0 && (
-          <Text style={styles.statDetail}>GST: +₹{summary.totalGstAmount}</Text>
+          <Text style={styles.statDetail}>GST: -₹{Math.round(summary.totalGstAmount)}</Text>
         )}
       </View>
 
@@ -139,19 +143,19 @@ const DaySummaryScreen = () => {
             <View style={styles.shopDetails}>
               {shop.discountAmount > 0 && (
                 <Text style={styles.detailText}>
-                  Discount ({shop.discountPercentage}%): -₹{shop.discountAmount}
+                  Discount ({shop.discountPercentage}%): -₹{Math.round(shop.discountAmount)}
                 </Text>
               )}
               {shop.gstAmount > 0 && (
                 <Text style={styles.detailText}>
-                  GST ({shop.gstPercentage}%): +₹{shop.gstAmount}
+                  GST ({shop.gstPercentage}%): -₹{Math.round(shop.gstAmount)}
                 </Text>
               )}
             </View>
           </View>
           <View style={styles.amountContainer}>
-            <Text style={styles.shopAmount}>₹{shop.totalAmount}</Text>
-            <Text style={styles.subtotalText}>Subtotal: ₹{shop.subtotal}</Text>
+            <Text style={styles.shopAmount}>₹{Math.round(shop.totalAmount)}</Text>
+            <Text style={styles.subtotalText}>Subtotal: ₹{Math.round(shop.subtotal)}</Text>
           </View>
         </TouchableOpacity>
       ))}

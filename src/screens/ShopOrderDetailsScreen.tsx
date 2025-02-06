@@ -7,7 +7,8 @@ import {
   TouchableOpacity, 
   ToastAndroid,
   Platform,
-  Alert 
+  Alert,
+  Linking 
 } from 'react-native';
 import { RouteProp } from '@react-navigation/native';
 import XLSX from 'xlsx';
@@ -21,6 +22,8 @@ type ShopOrderDetailsParams = {
     quantity: number;
     uom: string;
     amount: number;
+    discountPercentage: number;
+    gstPercentage: number;
   }>;
   totalAmount: number;
   subtotal: number;
@@ -68,23 +71,54 @@ const ShopOrderDetailsScreen: React.FC<Props> = ({ route }) => {
     setIsExporting(true);
 
     try {
-      // Prepare data for Excel
-      const orderData = orders.map(order => ({
+      // Create simple product rows with shop details
+      const rows = route.params.orders.map(order => ({
         'Shop Name': shopName,
         'Area': area,
         'Product Name': order.product_name,
         'Quantity': order.quantity,
         'UOM': order.uom,
-        'Price': order.amount,
-        'GST (%)': gstPercentage,
-        'GST Amount': gstAmount,
-        'Discount (%)': discountPercentage,
-        'Discount Amount': discountAmount,
-        'Total': totalAmount
+        'Amount': Math.round(order.amount),
+        'Discount %': order.discountPercentage.toFixed(2),
+        'GST %': order.gstPercentage.toFixed(2),
+        'Final Amount': Math.round(order.amount * (1 - order.discountPercentage/100) * (1 + order.gstPercentage/100))
       }));
 
+      // Add empty row
+      rows.push({
+        'Shop Name': '',
+        'Area': '',
+        'Product Name': '',
+        'Quantity': '',
+        'UOM': '',
+        'Amount': '',
+        'Discount %': '',
+        'GST %': '',
+        'Final Amount': ''
+      });
+
+      // Add total row
+      const total = rows.reduce((sum, row) => {
+        if (row['Final Amount'] !== '') {
+          return sum + (row['Final Amount'] as number);
+        }
+        return sum;
+      }, 0);
+
+      rows.push({
+        'Shop Name': 'TOTAL',
+        'Area': '',
+        'Product Name': '',
+        'Quantity': '',
+        'UOM': '',
+        'Amount': '',
+        'Discount %': '',
+        'GST %': '',
+        'Final Amount': Math.round(total)
+      });
+
       // Create worksheet
-      const ws = XLSX.utils.json_to_sheet(orderData);
+      const ws = XLSX.utils.json_to_sheet(rows);
       
       // Set column widths
       const colWidths = [
@@ -93,39 +127,51 @@ const ShopOrderDetailsScreen: React.FC<Props> = ({ route }) => {
         { wch: 25 }, // Product Name
         { wch: 10 }, // Quantity
         { wch: 10 }, // UOM
-        { wch: 12 }, // Price
-        { wch: 10 }, // GST %
-        { wch: 12 }, // GST Amount
+        { wch: 15 }, // Amount
         { wch: 12 }, // Discount %
-        { wch: 15 }, // Discount Amount
-        { wch: 15 }  // Total
+        { wch: 12 }, // GST %
+        { wch: 15 }, // Final Amount
       ];
+      
       ws['!cols'] = colWidths;
 
+      // Style header row
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:I1');
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const address = XLSX.utils.encode_col(C) + '1';
+        if (!ws[address]) continue;
+        ws[address].s = {
+          font: { bold: true },
+          fill: { fgColor: { rgb: "CCCCCC" } }
+        };
+      }
+
+      // Create workbook
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Order Details');
 
-      // Generate Excel file with correct output type
-      const wbout = XLSX.write(wb, { 
-        type: 'base64',
-        bookType: 'xlsx'
-      });
+      // Generate Excel file
+      const today = new Date().toISOString().split('T')[0];
+      const fileName = `${shopName}_${today}.xlsx`;
+      const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
 
-      // Create a safe filename
-      const safeShopName = shopName.replace(/[^a-zA-Z0-9]/g, '_');
-      const timestamp = new Date().getTime();
-      const fileName = `${safeShopName}_${timestamp}.xlsx`;
-      
-      const dirs = RNFetchBlob.fs.dirs;
-      const filePath = `${dirs.DownloadDir}/${fileName}`;
+      // Get download directory
+      const downloadDir = RNFetchBlob.fs.dirs.DownloadDir;
+      const filePath = `${downloadDir}/${fileName}`;
 
-      // Write the base64 data directly
+      // Write file
       await RNFetchBlob.fs.writeFile(filePath, wbout, 'base64');
-      
-      showMessage(`Order details saved to Downloads/${fileName}`);
+      showMessage(`Excel file saved to Downloads folder: ${fileName}`);
+
+      // Open file
+      try {
+        await Linking.openURL(`file://${filePath}`);
+      } catch (error) {
+        console.log('Could not open file automatically');
+      }
     } catch (error) {
-      console.error('Export error:', error);
-      showMessage('Failed to export order details. Please try again.');
+      console.error('Error exporting to Excel:', error);
+      showMessage('Failed to export Excel file');
     } finally {
       setIsExporting(false);
     }
@@ -151,43 +197,89 @@ const ShopOrderDetailsScreen: React.FC<Props> = ({ route }) => {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.ordersList}>
-        {orders.map((order, index) => (
-          <View key={index} style={styles.orderItem}>
-            <View style={styles.productInfo}>
-              <Text style={styles.productName}>{order.product_name}</Text>
-              <Text style={styles.quantity}>
-                {order.quantity} {order.uom}
-              </Text>
+      <View style={styles.orderItems}>
+        {orders.map((item, index) => {
+          const itemSubtotal = Number(item.amount) || 0;
+          const itemDiscountPercentage = Number(item.discountPercentage) || 0;
+          const itemGstPercentage = Number(item.gstPercentage) || 0;
+          
+          const itemDiscount = (itemSubtotal * itemDiscountPercentage) / 100;
+          const afterDiscount = itemSubtotal - itemDiscount;
+          const itemGst = (afterDiscount * itemGstPercentage) / 100;
+          const itemFinalAmount = afterDiscount + itemGst;
+
+          return (
+            <View key={index} style={styles.itemContainer}>
+              <View style={styles.itemHeader}>
+                <Text style={styles.itemName}>{item.product_name}</Text>
+                <Text style={styles.itemQuantity}>
+                  {item.quantity} {item.uom} × ₹{Math.round(itemSubtotal)}
+                </Text>
+              </View>
+              <View style={styles.itemBreakdown}>
+                <Text style={styles.breakdownText}>
+                  Discount ({itemDiscountPercentage}%): -₹{Math.round(itemDiscount)}
+                </Text>
+                <Text style={styles.breakdownText}>
+                  GST ({itemGstPercentage}%): +₹{Math.round(itemGst)}
+                </Text>
+                <Text style={styles.finalAmount}>
+                  Final Amount: ₹{Math.round(itemFinalAmount)}
+                </Text>
+              </View>
             </View>
-            <Text style={styles.amount}>₹{order.amount}</Text>
-          </View>
-        ))}
+          );
+        })}
       </View>
 
       <View style={styles.summaryContainer}>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Subtotal</Text>
-          <Text style={styles.summaryValue}>₹{subtotal}</Text>
+          <Text style={styles.summaryValue}>
+            ₹{Math.round(orders.reduce((sum, item) => sum + (Number(item.amount) || 0), 0))}
+          </Text>
         </View>
 
-        {discountAmount > 0 && (
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Discount ({discountPercentage}%)</Text>
-            <Text style={[styles.summaryValue, styles.discountText]}>-₹{discountAmount}</Text>
-          </View>
-        )}
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Total Discount</Text>
+          <Text style={[styles.summaryValue, styles.discountText]}>
+            -₹{Math.round(orders.reduce((sum, item) => {
+              const itemSubtotal = Number(item.amount) || 0;
+              const itemDiscountPercentage = Number(item.discountPercentage) || 0;
+              return sum + (itemSubtotal * itemDiscountPercentage / 100);
+            }, 0))}
+          </Text>
+        </View>
 
-        {gstAmount > 0 && (
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>GST ({gstPercentage}%)</Text>
-            <Text style={[styles.summaryValue, styles.gstText]}>+₹{gstAmount}</Text>
-          </View>
-        )}
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Total GST</Text>
+          <Text style={[styles.summaryValue, styles.gstText]}>
+            +₹{Math.round(orders.reduce((sum, item) => {
+              const itemSubtotal = Number(item.amount) || 0;
+              const itemDiscountPercentage = Number(item.discountPercentage) || 0;
+              const afterDiscount = itemSubtotal - (itemSubtotal * itemDiscountPercentage / 100);
+              const itemGstPercentage = Number(item.gstPercentage) || 0;
+              return sum + (afterDiscount * itemGstPercentage / 100);
+            }, 0))}
+          </Text>
+        </View>
 
         <View style={[styles.summaryRow, styles.totalRow]}>
           <Text style={styles.totalLabel}>Total Amount</Text>
-          <Text style={styles.totalAmount}>₹{totalAmount}</Text>
+          <Text style={styles.totalAmount}>
+            ₹{Math.round(orders.reduce((sum, item) => {
+              const itemSubtotal = Number(item.amount) || 0;
+              const itemDiscountPercentage = Number(item.discountPercentage) || 0;
+              const itemGstPercentage = Number(item.gstPercentage) || 0;
+              
+              const itemDiscount = (itemSubtotal * itemDiscountPercentage) / 100;
+              const afterDiscount = itemSubtotal - itemDiscount;
+              const itemGst = (afterDiscount * itemGstPercentage) / 100;
+              const itemFinalAmount = afterDiscount + itemGst;
+              
+              return sum + itemFinalAmount;
+            }, 0))}
+          </Text>
         </View>
       </View>
     </ScrollView>
@@ -201,15 +293,13 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#fff',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    padding: 16,
+    marginBottom: 8,
   },
   shopName: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '600',
     color: '#333',
-    marginBottom: 4,
   },
   area: {
     fontSize: 14,
@@ -219,57 +309,72 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#666',
+    marginTop: 16,
+    marginBottom: 8,
   },
   exportButton: {
     backgroundColor: '#34C759',
-    padding: 10,
+    padding: 12,
     borderRadius: 8,
-    marginTop: 10,
-    marginHorizontal: 20,
+    alignItems: 'center',
+    marginTop: 8,
   },
   exportButtonDisabled: {
-    backgroundColor: '#A0A0A0',
+    opacity: 0.7,
   },
   exportButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    textAlign: 'center',
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
-  ordersList: {
+  orderItems: {
     padding: 16,
   },
-  orderItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  itemContainer: {
     backgroundColor: '#fff',
     padding: 16,
     borderRadius: 8,
     marginBottom: 12,
     elevation: 2,
   },
-  productInfo: {
-    flex: 1,
+  itemHeader: {
+    marginBottom: 8,
   },
-  productName: {
+  itemName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
     marginBottom: 4,
   },
-  quantity: {
+  itemQuantity: {
     fontSize: 14,
     color: '#666',
   },
-  amount: {
-    fontSize: 16,
+  itemBreakdown: {
+    marginLeft: 16,
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    paddingTop: 8,
+  },
+  breakdownText: {
+    fontSize: 14,
+    color: '#666',
+    marginVertical: 2,
+  },
+  finalAmount: {
+    fontSize: 14,
     fontWeight: '600',
-    color: '#34C759',
+    color: '#000',
+    marginTop: 8,
   },
   summaryContainer: {
     backgroundColor: '#fff',
-    padding: 20,
-    marginTop: 20,
+    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 8,
+    elevation: 2,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -283,8 +388,7 @@ const styles = StyleSheet.create({
   },
   summaryValue: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: '500',
   },
   discountText: {
     color: '#FF3B30',
@@ -293,10 +397,10 @@ const styles = StyleSheet.create({
     color: '#007AFF',
   },
   totalRow: {
-    marginTop: 10,
-    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#eee',
+    marginTop: 8,
+    paddingTop: 16,
   },
   totalLabel: {
     fontSize: 18,
@@ -304,8 +408,8 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   totalAmount: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '600',
     color: '#34C759',
   },
 });

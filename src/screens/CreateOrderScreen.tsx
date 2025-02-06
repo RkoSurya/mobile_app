@@ -33,13 +33,13 @@ const CreateOrderScreen = () => {
     product_name: '',
     quantity: 0,
     uom: '',
-    amount: 0
+    amount: 0,
+    gstPercentage: 0,
+    discountPercentage: 0
   });
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'online' | 'credit'>('cash');
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'completed' | 'failed'>('pending');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [gstPercentage, setGstPercentage] = useState<number>(0);
-  const [discountPercentage, setDiscountPercentage] = useState<number>(0);
   const [productSuggestions, setProductSuggestions] = useState<Array<{ id: string; name: string }>>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
@@ -123,7 +123,9 @@ const CreateOrderScreen = () => {
         product_name: '',
         quantity: 0,
         uom: '',
-        amount: 0
+        amount: 0,
+        gstPercentage: 0,
+        discountPercentage: 0
       });
     } catch (error) {
       console.error('Error adding item:', error);
@@ -157,12 +159,42 @@ const CreateOrderScreen = () => {
     );
   };
 
-  const calculateTotal = () => {
-    const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
-    const discountAmount = (subtotal * discountPercentage) / 100;
-    const afterDiscount = subtotal - discountAmount;
-    const gstAmount = (afterDiscount * gstPercentage) / 100;
-    return afterDiscount + gstAmount;
+  const calculateSubtotal = () => {
+    return lineItems.reduce((total, item) => total + item.amount, 0);
+  };
+
+  const calculateOrderTotals = () => {
+    const subtotal = lineItems.reduce((total, item) => total + item.amount, 0);
+    
+    // Calculate total discount and GST
+    let totalDiscountAmount = 0;
+    let totalGstAmount = 0;
+    
+    lineItems.forEach(item => {
+      const itemSubtotal = item.amount;
+      const discountAmount = (itemSubtotal * item.discountPercentage) / 100;
+      const afterDiscount = itemSubtotal - discountAmount;
+      const gstAmount = (afterDiscount * item.gstPercentage) / 100;
+      
+      totalDiscountAmount += discountAmount;
+      totalGstAmount += gstAmount;
+    });
+
+    // Calculate average percentages
+    const discountPercentage = subtotal > 0 ? (totalDiscountAmount / subtotal) * 100 : 0;
+    const gstPercentage = (subtotal - totalDiscountAmount) > 0 ? 
+      (totalGstAmount / (subtotal - totalDiscountAmount)) * 100 : 0;
+
+    const finalAmount = subtotal - totalDiscountAmount - totalGstAmount;
+
+    return {
+      subtotal,
+      discountAmount: totalDiscountAmount,
+      discountPercentage,
+      gstAmount: totalGstAmount,
+      gstPercentage,
+      totalAmount: finalAmount
+    };
   };
 
   const handleCreateOrder = async () => {
@@ -178,10 +210,14 @@ const CreateOrderScreen = () => {
         return;
       }
 
-      const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
-      const discountAmount = (subtotal * discountPercentage) / 100;
-      const afterDiscount = subtotal - discountAmount;
-      const gstAmount = (afterDiscount * gstPercentage) / 100;
+      const {
+        subtotal,
+        discountAmount,
+        discountPercentage,
+        gstAmount,
+        gstPercentage,
+        totalAmount
+      } = calculateOrderTotals();
 
       const orderData = {
         shop_id: route.params.shop.id,
@@ -190,12 +226,12 @@ const CreateOrderScreen = () => {
         user_id: currentUser.uid,
         user_email: currentUser.email || '',
         line_items: lineItems,
-        subtotal: subtotal,
-        discount_percentage: discountPercentage,
+        subtotal,
         discount_amount: discountAmount,
-        gst_percentage: gstPercentage,
+        discount_percentage: discountPercentage,
         gst_amount: gstAmount,
-        total_amount: calculateTotal(),
+        gst_percentage: gstPercentage,
+        total_amount: totalAmount,
         payment_method: paymentMethod,
       };
 
@@ -240,7 +276,7 @@ const CreateOrderScreen = () => {
                         style={styles.suggestionItem}
                         onPress={() => selectProduct(item.name)}
                       >
-                        <Text>{item.name}</Text>
+                        <Text style={{ color: '#000000' }}>{item.name}</Text>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
@@ -304,52 +340,41 @@ const CreateOrderScreen = () => {
               />
             </View>
           </View>
+
+          <View style={styles.row}>
+            <View style={[styles.inputContainer, { flex: 1 }]}>
+              <Text style={styles.label}>GST %</Text>
+              <TextInput
+                style={styles.input}
+                value={currentItem.gstPercentage.toString()}
+                onChangeText={(text) => setCurrentItem({ ...currentItem, gstPercentage: parseFloat(text) || 0 })}
+                keyboardType="numeric"
+                placeholder="Enter GST %"
+              />
+            </View>
+            <View style={[styles.inputContainer, { flex: 1 }]}>
+              <Text style={styles.label}>Discount %</Text>
+              <TextInput
+                style={styles.input}
+                value={currentItem.discountPercentage.toString()}
+                onChangeText={(text) => setCurrentItem({ ...currentItem, discountPercentage: parseFloat(text) || 0 })}
+                keyboardType="numeric"
+                placeholder="Enter discount %"
+              />
+            </View>
+          </View>
         </View>
 
         {lineItems.length > 0 && (
           <View style={styles.summaryContainer}>
-            <View style={styles.row}>
-              <View style={[styles.inputContainer, { flex: 1 }]}>
-                <Text style={styles.label}>GST %</Text>
-                <TextInput
-                  style={styles.input}
-                  value={gstPercentage.toString()}
-                  onChangeText={(text) => setGstPercentage(parseFloat(text) || 0)}
-                  keyboardType="numeric"
-                  placeholder="Enter GST percentage"
-                />
-              </View>
-              <View style={[styles.inputContainer, { flex: 1 }]}>
-                <Text style={styles.label}>Discount %</Text>
-                <TextInput
-                  style={styles.input}
-                  value={discountPercentage.toString()}
-                  onChangeText={(text) => setDiscountPercentage(parseFloat(text) || 0)}
-                  keyboardType="numeric"
-                  placeholder="Enter discount percentage"
-                />
-              </View>
-            </View>
-            
             <View style={styles.totalContainer}>
               <Text style={styles.totalLabel}>Subtotal:</Text>
-              <Text style={styles.totalAmount}>₹{lineItems.reduce((sum, item) => sum + item.amount, 0).toFixed(2)}</Text>
+              <Text style={styles.totalAmount}>₹{Math.round(lineItems.reduce((sum, item) => sum + item.amount, 0))}</Text>
             </View>
-            {discountPercentage > 0 && (
-              <View style={styles.totalContainer}>
-                <Text style={styles.totalLabel}>Discount ({discountPercentage}%):</Text>
-                <Text style={styles.totalAmount}>-₹{((lineItems.reduce((sum, item) => sum + item.amount, 0) * discountPercentage) / 100).toFixed(2)}</Text>
-              </View>
-            )}
-            {gstPercentage > 0 && (
-              <View style={styles.totalContainer}>
-                <Text style={styles.totalLabel}>GST ({gstPercentage}%):</Text>
-                <Text style={styles.totalAmount}>₹{((lineItems.reduce((sum, item) => sum + item.amount, 0) * (1 - discountPercentage / 100) * gstPercentage) / 100).toFixed(2)}</Text>
-              </View>
-            )}
+
             <View style={[styles.totalContainer, styles.finalTotal]}>
               <Text style={styles.totalLabel}>Total Amount:</Text>
-              <Text style={styles.totalAmount}>₹{calculateTotal().toFixed(2)}</Text>
+              <Text style={styles.totalAmount}>₹{Math.round(calculateOrderTotals().totalAmount)}</Text>
             </View>
           </View>
         )}
@@ -361,6 +386,16 @@ const CreateOrderScreen = () => {
                   <Text style={styles.itemName}>{item.product_name}</Text>
                   <Text style={styles.itemDetails}>
                     {item.quantity} {item.uom} × ₹{item.amount}
+                  </Text>
+                  <Text style={styles.itemDetails}>
+                    GST: {item.gstPercentage}% (-₹{Math.round((item.amount * (1 - item.discountPercentage / 100) * item.gstPercentage) / 100)}) | 
+                    Discount: {item.discountPercentage}% (-₹{Math.round((item.amount * item.discountPercentage) / 100)})
+                  </Text>
+                  <Text style={[styles.itemDetails, styles.finalAmount]}>
+                    Final Amount: ₹{Math.round(item.amount - 
+                      (item.amount * item.discountPercentage / 100) - 
+                      (item.amount * (1 - item.discountPercentage / 100) * item.gstPercentage / 100)
+                    )}
                   </Text>
                 </View>
                 <View style={styles.itemActions}>
@@ -473,7 +508,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: '#000000',
     marginBottom: 8,
   },
   input: {
@@ -483,6 +518,7 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     backgroundColor: '#fff',
+    color: '#000000',
   },
   pickerContainer: {
     borderWidth: 1,
@@ -558,11 +594,11 @@ const styles = StyleSheet.create({
   itemName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: '#000000',
   },
   itemDetails: {
     fontSize: 14,
-    color: '#666',
+    color: '#000000',
   },
   totalContainer: {
     flexDirection: 'row',
@@ -572,10 +608,12 @@ const styles = StyleSheet.create({
   totalLabel: {
     fontSize: 16,
     fontWeight: '600',
+    color: '#000000',
   },
   totalAmount: {
     fontSize: 16,
     fontWeight: '600',
+    color: '#000000',
   },
   finalTotal: {
     marginTop: 10,
@@ -615,16 +653,24 @@ const styles = StyleSheet.create({
     top: '100%',
     left: 0,
     right: 0,
-    backgroundColor: 'white',
-    borderRadius: 4,
-    elevation: 3,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
     maxHeight: 150,
     zIndex: 1000,
+    elevation: 5,
   },
   suggestionItem: {
     padding: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#ddd',
+    backgroundColor: '#ffffff',
+  },
+  finalAmount: {
+    fontWeight: '600',
+    color: '#000000',
+    marginTop: 4,
   },
 });
 
