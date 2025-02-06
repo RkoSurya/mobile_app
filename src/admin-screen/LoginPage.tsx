@@ -6,61 +6,117 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
 import type { NavigationProp } from '../types/navigation';
 
 // Define the type for admin user
 type AdminUser = {
-  username: string;
-  password: string;
+  email: string;
   role: string;
+  name: string;
 };
-
-// Array of admin users
-const adminUsers: AdminUser[] = [
-  { username: 'surya', password: 'surya@02', role: 'super_admin' },
-  { username: 'sathya', password: 'sathya@02', role: 'admin' },
-  { username: 'manager', password: 'manager123', role: 'manager' },
-];
 
 const LoginPage = () => {
   const navigation = useNavigation<NavigationProp>();
-  const [username, setUsername] = useState('');
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('admin');
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleLogin = () => {
-    // Find matching admin user
-    const adminUser = adminUsers.find(
-      user => user.username === username && user.password === password
-    );
+  const handleSignUp = async () => {
+    try {
+      if (!email || !password || !name || !role) {
+        Alert.alert('Error', 'Please fill in all fields');
+        return;
+      }
 
-    if (adminUser) {
-      Alert.alert('Success', `Welcome ${adminUser.role}!`, [
+      // Create user with email and password
+      const userCredential = await auth().createUserWithEmailAndPassword(email, password);
+      
+      // Store additional user data in Firestore
+      await firestore().collection('admins').doc(userCredential.user.uid).set({
+        email,
+        name,
+        role,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+      });
+
+      Alert.alert('Success', 'Account created successfully!', [
         {
           text: 'OK',
-          onPress: () => navigation.navigate('SalespersonList')
-        }
+          onPress: () => setIsLogin(true),
+        },
       ]);
-    } else {
-      Alert.alert('Error', 'Invalid credentials');
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    }
+  };
+
+  const handleLogin = async () => {
+    try {
+      if (!email || !password) {
+        Alert.alert('Error', 'Please enter email and password');
+        return;
+      }
+
+      // Sign in user
+      await auth().signInWithEmailAndPassword(email, password);
+      
+      // Get user data from Firestore
+      const userDoc = await firestore()
+        .collection('admins')
+        .doc(auth().currentUser?.uid)
+        .get();
+
+      if (userDoc.exists) {
+        const userData = userDoc.data() as AdminUser;
+        Alert.alert('Success', `Welcome ${userData.name}!`, [
+          {
+            text: 'OK',
+            onPress: () => navigation.navigate('SalespersonList'),
+          },
+        ]);
+      } else {
+        auth().signOut();
+        Alert.alert('Error', 'User not found in admin database');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
     }
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.loginBox}>
-        <Text style={styles.title}>Admin Login</Text>
+        <Text style={styles.title}>{isLogin ? 'Admin Login' : 'Admin Sign Up'}</Text>
         
+        {!isLogin && (
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter Name"
+              placeholderTextColor="#666"
+              value={name}
+              onChangeText={setName}
+            />
+          </View>
+        )}
+
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
-            placeholder="Enter Username"
+            placeholder="Enter Email"
             placeholderTextColor="#666"
-            value={username}
-            onChangeText={setUsername}
+            value={email}
+            onChangeText={setEmail}
             autoCapitalize="none"
+            keyboardType="email-address"
           />
         </View>
         
@@ -83,28 +139,57 @@ const LoginPage = () => {
           </TouchableOpacity>
         </View>
 
+        {!isLogin && (
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter Role (admin/manager)"
+              placeholderTextColor="#666"
+              value={role}
+              onChangeText={setRole}
+              autoCapitalize="none"
+            />
+          </View>
+        )}
+
         <TouchableOpacity 
           style={styles.loginButton}
-          onPress={handleLogin}
+          onPress={isLogin ? handleLogin : handleSignUp}
         >
-          <Text style={styles.loginButtonText}>Login</Text>
+          <Text style={styles.loginButtonText}>
+            {isLogin ? 'Login' : 'Sign Up'}
+          </Text>
         </TouchableOpacity>
 
-        <Text style={styles.hint}>Available roles: super_admin, admin, manager</Text>
+        <TouchableOpacity 
+          style={styles.switchButton}
+          onPress={() => {
+            setIsLogin(!isLogin);
+            setEmail('');
+            setPassword('');
+            setName('');
+            setRole('admin');
+          }}
+        >
+          <Text style={styles.switchButtonText}>
+            {isLogin ? 'Need an account? Sign Up' : 'Already have an account? Login'}
+          </Text>
+        </TouchableOpacity>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#f5f5f5',
+    padding: 20,
   },
   loginBox: {
-    width: '85%',
+    width: '100%',
     backgroundColor: 'white',
     borderRadius: 10,
     padding: 20,
@@ -158,12 +243,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  hint: {
-    color: '#666',
-    fontSize: 12,
-    textAlign: 'center',
+  switchButton: {
     marginTop: 15,
-    fontStyle: 'italic',
+    alignItems: 'center',
+  },
+  switchButtonText: {
+    color: '#007AFF',
+    fontSize: 14,
   },
 });
 

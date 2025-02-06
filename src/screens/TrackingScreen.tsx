@@ -4,7 +4,7 @@ import Geolocation from '@react-native-community/geolocation';
 import BackgroundTimer from 'react-native-background-timer';
 import DeviceInfo from 'react-native-device-info';
 import auth from '@react-native-firebase/auth';
-import { addLocationData, calculateDistance } from '../services/firestoreService';
+import { addLocationData, calculateDistance, endDay } from '../services/firestoreService';
 import { useNavigation, useRoute } from '@react-native-navigation/native';
 import { NavigationProp, RootStackParamList } from '../types/navigation';
 import { check, request, PERMISSIONS, RESULTS, openSettings } from 'react-native-permissions';
@@ -454,20 +454,28 @@ export const TrackingScreen: React.FC<TrackingScreenProps> = ({ navigation, rout
 
   const handleEndDayOnTracking = async () => {
     try {
+      // Stop background service
       if (await BackgroundService.isRunning()) {
         await BackgroundService.stop();
       }
+
+      // Call endDay to update user status and activity history
+      if (currentUser?.uid) {
+        await endDay(currentUser.uid);
+      }
+      
+      // Reset tracking state
+      setIsTracking(false);
+      setIsPaused(true);
+      setTime(0);
+      setCurrentLocation(null);
+      setLocationHistory([]);
+      setDistance(0);
+      navigation.navigate('Home');
     } catch (error) {
-      console.error('Error stopping background service:', error);
+      console.error('Error ending day:', error);
+      Alert.alert('Error', 'Failed to end day. Please try again.');
     }
-    
-    setIsTracking(false);
-    setIsPaused(true);
-    setTime(0);
-    setCurrentLocation(null);
-    setLocationHistory([]);
-    setDistance(0);
-    navigation.navigate('Home');
   };
 
   const handleShopReached = () => {
@@ -663,12 +671,13 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 16,
-    color: '#8E8E93',
+    color: '#333',
     marginBottom: 5
   },
   statValue: {
     fontSize: 24,
-    fontWeight: 'bold'
+    fontWeight: 'bold',
+    color: '#000'
   },
   locationInfo: {
     backgroundColor: '#F2F2F7',
@@ -678,12 +687,13 @@ const styles = StyleSheet.create({
   },
   locationLabel: {
     fontSize: 16,
-    color: '#8E8E93',
+    color: '#333',
     marginBottom: 5
   },
   coordinates: {
     fontSize: 18,
-    fontWeight: '500'
+    fontWeight: '500',
+    color: '#000'
   },
   buttonContainer: {
     padding: 20,
@@ -764,7 +774,7 @@ const styles = StyleSheet.create({
   },
   updateStatusText: {
     fontSize: 14,
-    color: '#666'
+    color: '#333'
   },
   statusContainer: {
     padding: 10,
@@ -775,6 +785,7 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 14,
     marginVertical: 2,
+    color: '#333'
   },
   lowAccuracy: {
     color: '#ff4444',
@@ -799,12 +810,13 @@ const styles = StyleSheet.create({
   },
   infoLabel: {
     fontSize: 16,
-    color: '#8E8E93',
+    color: '#333',
     marginBottom: 5
   },
   infoValue: {
     fontSize: 24,
-    fontWeight: 'bold'
+    fontWeight: 'bold',
+    color: '#000'
   },
   locationContainer: {
     backgroundColor: '#F2F2F7',
@@ -814,12 +826,13 @@ const styles = StyleSheet.create({
   },
   locationText: {
     fontSize: 16,
-    color: '#8E8E93',
+    color: '#333',
     marginBottom: 5
   },
   coordinatesText: {
     fontSize: 18,
-    fontWeight: '500'
+    fontWeight: '500',
+    color: '#000'
   },
 });
 

@@ -5,11 +5,14 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
+  Dimensions,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '../types/navigation';
 import { useOrders } from '../context/OrderContext';
 import EndDayModal from '../components/EndDayModal';
+
+const { width } = Dimensions.get('window');
 
 const HomeScreen = () => {
   const navigation = useNavigation<NavigationProp>();
@@ -25,21 +28,33 @@ const HomeScreen = () => {
     setEndDayModalVisible(false);
   };
 
+  const handleBack = () => {
+    navigation.navigate('Login');
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+          <Text style={styles.backIcon}>←</Text>
+        </TouchableOpacity>
         <Text style={styles.title}>Home</Text>
-        
-        <TouchableOpacity style={styles.startDayButton} onPress={handleStartDay}>
-          <Text style={styles.startDayText}>🚀 Start Day</Text>
-        </TouchableOpacity>
+        <View style={styles.placeholder} />
+      </View>
 
-        <TouchableOpacity
-          style={[styles.startDayButton, styles.endDayButton]}
-          onPress={() => setEndDayModalVisible(true)}
-        >
-          <Text style={styles.startDayText}>End Day</Text>
-        </TouchableOpacity>
+      <View style={styles.content}>
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity style={styles.startDayButton} onPress={handleStartDay}>
+            <Text style={styles.buttonText}>🚀 Start Day</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.startDayButton, styles.endDayButton]}
+            onPress={() => setEndDayModalVisible(true)}
+          >
+            <Text style={styles.buttonText}>🏁 End Day</Text>
+          </TouchableOpacity>
+        </View>
 
         <EndDayModal
           visible={endDayModalVisible}
@@ -56,25 +71,50 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 20,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  backButton: {
+    padding: 8,
+  },
+  backIcon: {
+    fontSize: 24,
+    color: '#000',
+  },
+  placeholder: {
+    width: 40,
   },
   title: {
-    fontSize: 28,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#000',
     textAlign: 'center',
-    marginBottom: 30,
+  },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  buttonContainer: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
   },
   startDayButton: {
+    width: width * 0.8,
     height: 56,
-    backgroundColor: '#22C55E', 
+    backgroundColor: '#22C55E',
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 20,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -86,9 +126,8 @@ const styles = StyleSheet.create({
   },
   endDayButton: {
     backgroundColor: '#ef5350',
-    marginTop: 20,
   },
-  startDayText: {
+  buttonText: {
     color: '#fff',
     fontSize: 18,
     fontWeight: '600',

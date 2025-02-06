@@ -7,6 +7,9 @@ import {
   StyleSheet,
   SafeAreaView,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
@@ -27,7 +30,8 @@ const LoginScreen = () => {
   const [name, setName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [isSignUp, setIsSignUp] = useState(true); 
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const navigation = useNavigation<NavigationProp>();
 
   const handleAuth = () => {
@@ -66,7 +70,7 @@ const LoginScreen = () => {
           addUserToFirestore(userData, user.uid)
             .then(() => {
               Alert.alert('Success', 'Account created successfully!', [
-                { text: 'OK', onPress: () => navigation.replace('Login') }
+                { text: 'OK', onPress: () => setIsSignUp(false) }
               ]);
             })
             .catch((error) => {
@@ -80,12 +84,10 @@ const LoginScreen = () => {
       auth().signInWithEmailAndPassword(email, password)
         .then(async (userCredential) => {
           const user = userCredential.user;
-          // Get and store user's name
           const userName = await getUserNameByEmail(email);
           if (userName) {
             await AsyncStorage.setItem('userName', userName);
           }
-          // Update user's sign-in status
           await updateUserSignInStatus(user.uid, true);
           navigation.replace('Home');
         })
@@ -95,65 +97,109 @@ const LoginScreen = () => {
     }
   };
 
+  const toggleForm = () => {
+    setIsSignUp(!isSignUp);
+    setEmail('');
+    setPassword('');
+    setName('');
+    setPhoneNumber('');
+    setConfirmPassword('');
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>{isSignUp ? 'Sign Up' : 'Sign In'}</Text>
-        {isSignUp && (
-          <>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardView}>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={styles.content}>
+            <View style={styles.logoContainer}>
+              <Text style={styles.appName}>Sales</Text>
+            </View>
+
+            <Text style={styles.title}>{isSignUp ? 'Create Account' : 'Welcome Back!'}</Text>
+            <Text style={styles.subtitle}>
+              {isSignUp ? 'Sign up to get started' : 'Sign in to continue'}
+            </Text>
+
+            {isSignUp && (
+              <>
+                <TextInput
+                  placeholder="Full Name"
+                  value={name}
+                  onChangeText={setName}
+                  style={styles.input}
+                  placeholderTextColor="#666"
+                />
+                <TextInput
+                  placeholder="Phone Number"
+                  value={phoneNumber}
+                  onChangeText={setPhoneNumber}
+                  style={styles.input}
+                  keyboardType="phone-pad"
+                  placeholderTextColor="#666"
+                />
+              </>
+            )}
+
             <TextInput
-              placeholder="Name"
-              value={name}
-              onChangeText={setName}
               style={styles.input}
+              placeholder="Email Address"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
               placeholderTextColor="#666"
             />
-            <TextInput
-              placeholder="Phone Number"
-              value={phoneNumber}
-              onChangeText={setPhoneNumber}
-              style={styles.input}
-              keyboardType="phone-pad"
-              placeholderTextColor="#666"
-            />
-          </>
-        )}
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          placeholderTextColor="#666"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          placeholderTextColor="#666"
-        />
-        {isSignUp && (
-          <TextInput
-            placeholder="Confirm Password"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-            style={styles.input}
-            placeholderTextColor="#666"
-          />
-        )}
-        <TouchableOpacity style={styles.loginButton} onPress={handleAuth}>
-          <Text style={styles.loginButtonText}>{isSignUp ? 'Sign Up' : 'Sign In'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)}>
-          <Text style={styles.switchText}>
-            {isSignUp ? 'Already have an account? Sign In' : 'Don’t have an account? Sign Up'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+
+            <View style={styles.passwordContainer}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="Password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                placeholderTextColor="#666"
+              />
+              <TouchableOpacity
+                style={styles.eyeIcon}
+                onPress={() => setShowPassword(!showPassword)}>
+                <Text style={styles.eyeIconText}>
+                  {showPassword ? '👁️' : '👁️‍🗨️'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {isSignUp && (
+              <TextInput
+                placeholder="Confirm Password"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry={!showPassword}
+                style={styles.input}
+                placeholderTextColor="#666"
+              />
+            )}
+
+            <TouchableOpacity style={styles.loginButton} onPress={handleAuth}>
+              <Text style={styles.loginButtonText}>
+                {isSignUp ? 'Sign Up' : 'Sign In'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.switchButton} onPress={toggleForm}>
+              <Text style={styles.switchText}>
+                {isSignUp
+                  ? 'Already have an account? '
+                  : "Don't have an account? "}
+                <Text style={styles.switchTextBold}>
+                  {isSignUp ? 'Sign In' : 'Sign Up'}
+                </Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
@@ -163,17 +209,38 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
+  keyboardView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
   content: {
     flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: '20%',
+    paddingHorizontal: 24,
+    paddingTop: '10%',
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  appName: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#4285F4',
+    marginTop: 8,
+    marginBottom: 32,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     color: '#000',
-    textAlign: 'center',
     marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 32,
   },
   input: {
     height: 50,
@@ -186,6 +253,28 @@ const styles = StyleSheet.create({
     color: '#000',
     backgroundColor: '#fff',
   },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    marginBottom: 16,
+    backgroundColor: '#fff',
+  },
+  passwordInput: {
+    flex: 1,
+    height: 50,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: '#000',
+  },
+  eyeIcon: {
+    padding: 12,
+  },
+  eyeIconText: {
+    fontSize: 20,
+  },
   loginButton: {
     height: 50,
     backgroundColor: '#4285F4',
@@ -193,17 +282,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
+    shadowColor: '#4285F4',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   loginButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },
+  switchButton: {
+    marginTop: 24,
+    alignItems: 'center',
+  },
   switchText: {
-    fontSize: 16,
     color: '#666',
-    textAlign: 'center',
-    marginTop: 16,
+    fontSize: 14,
+  },
+  switchTextBold: {
+    color: '#4285F4',
+    fontWeight: 'bold',
   },
 });
 

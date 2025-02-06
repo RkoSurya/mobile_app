@@ -3,12 +3,27 @@ import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firest
 // Function to add user data to Firestore
 export const addUserToFirestore = async (userData: { name: string; email: string; phoneNumber: string }, userId: string) => {
   try {
-    await firestore().collection('users').doc(userId).set({
-      ...userData,
+    const userRef = firestore().collection('users').doc(userId);
+    const salespersonRef = firestore().collection('salespersons').doc(userId);
+    
+    // Add basic user data to users collection
+    await userRef.set({
+      email: userData.email,
       created_at: firestore.Timestamp.now(),
-      isActive: true,
-      lastSignIn: firestore.Timestamp.now()
+      role: 'salesperson'
     });
+
+    // Add salesperson specific data to salespersons collection
+    await salespersonRef.set({
+      name: userData.name,
+      phoneNumber: userData.phoneNumber,
+      isActive: true,
+      lastSignIn: firestore.Timestamp.now(),
+      lastEndDay: null,
+      activityHistory: [],
+      endDayHistory: []
+    });
+
     console.log('User added to Firestore!');
   } catch (error) {
     console.error('Error adding user to Firestore: ', error);
@@ -16,6 +31,7 @@ export const addUserToFirestore = async (userData: { name: string; email: string
   }
 };
 
+// Function to add location data to Firestore
 export const addLocationData = async (
   userId: string,
   journeyId: string, 
@@ -235,7 +251,7 @@ export const getUserNameByEmail = async (email: string): Promise<string | null> 
       .get();
 
     if (!usersSnapshot.empty) {
-      return usersSnapshot.docs[0].data().name;
+      return usersSnapshot.docs[0].data().email;
     }
     return null;
   } catch (error) {
@@ -405,13 +421,122 @@ export const createOrder = async (orderData: Omit<Order, 'created_at'>) => {
   }
 };
 
+export const getAllUsers = async () => {
+  try {
+    // Get all salespersons
+    const salespersonsSnapshot = await firestore().collection('salespersons').get();
+    const usersSnapshot = await firestore().collection('users').get();
+    
+    // Create a map of user emails
+    const userEmails = new Map(
+      usersSnapshot.docs.map(doc => [doc.id, doc.data().email])
+    );
+    
+    // Combine data from both collections
+    return salespersonsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      email: userEmails.get(doc.id) || '',
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('Error getting all users:', error);
+    throw error;
+  }
+};
+
+export const updateUserSignInStatus = async (userId: string, isSigningIn: boolean) => {
+  try {
+    const salespersonRef = firestore().collection('salespersons').doc(userId);
+    const timestamp = firestore.Timestamp.now();
+    
+    const updates: any = {
+      isActive: isSigningIn,
+      activityHistory: firestore.FieldValue.arrayUnion({
+        type: isSigningIn ? 'sign_in' : 'end_day',
+        timestamp: timestamp,
+        date: timestamp.toDate().toLocaleDateString(),
+        time: timestamp.toDate().toLocaleTimeString()
+      })
+    };
+
+    // Update the appropriate timestamp field
+    if (isSigningIn) {
+      updates.lastSignIn = timestamp;
+    } else {
+      updates.lastEndDay = timestamp;
+    }
+
+    await salespersonRef.update(updates);
+  } catch (error) {
+    console.error('Error updating user activity status:', error);
+    throw error;
+  }
+};
+
+export const getUserActivityHistory = async (userId: string) => {
+  try {
+    const salespersonDoc = await firestore().collection('salespersons').doc(userId).get();
+    const salespersonData = salespersonDoc.data();
+    return (salespersonData?.activityHistory || []).sort((a, b) => {
+      // Sort by timestamp in descending order (newest first)
+      if (!a.timestamp || !b.timestamp) return 0;
+      return b.timestamp.seconds - a.timestamp.seconds;
+    });
+  } catch (error) {
+    console.error('Error getting user activity history:', error);
+    throw error;
+  }
+};
+
+export const endDay = async (userId: string) => {
+  try {
+    const salespersonRef = firestore().collection('salespersons').doc(userId);
+    const endDayTime = firestore.Timestamp.now();
+    
+    await salespersonRef.update({
+      isActive: false,
+      lastEndDay: endDayTime,
+      endDayHistory: firestore.FieldValue.arrayUnion({
+        timestamp: endDayTime,
+        date: endDayTime.toDate().toLocaleDateString(),
+        time: endDayTime.toDate().toLocaleTimeString()
+      }),
+      activityHistory: firestore.FieldValue.arrayUnion({
+        type: 'end_day',
+        timestamp: endDayTime,
+        date: endDayTime.toDate().toLocaleDateString(),
+        time: endDayTime.toDate().toLocaleTimeString()
+      })
+    });
+  } catch (error) {
+    console.error('Error ending day:', error);
+    throw error;
+  }
+};
+
+export const getEndDayHistory = async (userId: string) => {
+  try {
+    const salespersonDoc = await firestore().collection('salespersons').doc(userId).get();
+    const salespersonData = salespersonDoc.data();
+    return salespersonData?.endDayHistory || [];
+  } catch (error) {
+    console.error('Error getting end day history:', error);
+    throw error;
+  }
+};
+
 export const getUserDetails = async (userId: string) => {
   try {
-    const userDoc = await firestore().collection('users').doc(userId).get();
-    if (userDoc.exists) {
-      return userDoc.data();
-    }
-    return null;
+    const [userDoc, salespersonDoc] = await Promise.all([
+      firestore().collection('users').doc(userId).get(),
+      firestore().collection('salespersons').doc(userId).get()
+    ]);
+    
+    return {
+      id: userId,
+      email: userDoc.data()?.email,
+      ...salespersonDoc.data()
+    };
   } catch (error) {
     console.error('Error getting user details:', error);
     throw error;
@@ -601,94 +726,6 @@ export const searchProducts = async (searchText: string) => {
     }));
   } catch (error) {
     console.error('Error searching products:', error);
-    throw error;
-  }
-};
-
-export const getAllUsers = async () => {
-  try {
-    const usersSnapshot = await firestore().collection('users').get();
-    return usersSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-  } catch (error) {
-    console.error('Error getting all users:', error);
-    throw error;
-  }
-};
-
-export const updateUserSignInStatus = async (userId: string, isSigningIn: boolean) => {
-  try {
-    const userRef = firestore().collection('users').doc(userId);
-    const timestamp = firestore.Timestamp.now();
-    
-    const updates: any = {
-      isActive: isSigningIn,
-      activityHistory: firestore.FieldValue.arrayUnion({
-        type: isSigningIn ? 'sign_in' : 'end_day',
-        timestamp: timestamp,
-        date: timestamp.toDate().toLocaleDateString(),
-        time: timestamp.toDate().toLocaleTimeString()
-      })
-    };
-
-    // Update the appropriate timestamp field
-    if (isSigningIn) {
-      updates.lastSignIn = timestamp;
-    } else {
-      updates.lastEndDay = timestamp;
-    }
-
-    await userRef.update(updates);
-  } catch (error) {
-    console.error('Error updating user activity status:', error);
-    throw error;
-  }
-};
-
-export const getUserActivityHistory = async (userId: string) => {
-  try {
-    const userDoc = await firestore().collection('users').doc(userId).get();
-    const userData = userDoc.data();
-    return (userData?.activityHistory || []).sort((a, b) => {
-      // Sort by timestamp in descending order (newest first)
-      if (!a.timestamp || !b.timestamp) return 0;
-      return b.timestamp.seconds - a.timestamp.seconds;
-    });
-  } catch (error) {
-    console.error('Error getting user activity history:', error);
-    throw error;
-  }
-};
-
-export const endDay = async (userId: string) => {
-  try {
-    const userRef = firestore().collection('users').doc(userId);
-    const endDayTime = firestore.Timestamp.now();
-    
-    await userRef.update({
-      isActive: false,
-      lastEndDay: endDayTime,
-      endDayHistory: firestore.FieldValue.arrayUnion({
-        timestamp: endDayTime,
-        date: endDayTime.toDate().toLocaleDateString(),
-        time: endDayTime.toDate().toLocaleTimeString()
-      })
-    });
-  } catch (error) {
-    console.error('Error ending day:', error);
-    throw error;
-  }
-};
-
-export const getEndDayHistory = async (userId: string) => {
-  try {
-    const userDoc = await firestore().collection('users').doc(userId).get();
-    const userData = userDoc.data();
-    return userData?.endDayHistory || [];
-  } catch (error) {
-    console.error('Error getting end day history:', error);
     throw error;
   }
 };
